@@ -19,7 +19,7 @@ jobs:
         python: ["3.11", "3.12", "3.13"]
     steps:
       # TODO: pin third-party actions to full commit SHAs (Dependabot keeps them updated).
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
       - uses: astral-sh/setup-uv@v5
