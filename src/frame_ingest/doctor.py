@@ -20,6 +20,7 @@ from frame_ingest.capabilities import CapabilityMemo
 from frame_ingest.config import AppConfig, known_caps
 from frame_ingest.errors import CapabilityChanged, FrameIngestError, redact
 from frame_ingest.ffmpeg import ffmpeg_exe, ffmpeg_version, run_ffmpeg
+from frame_ingest.guard.paths import job_jail
 from frame_ingest.providers.base import ProviderBundle, VisionBatchRequest, VisionFrame
 from frame_ingest.providers.openai_client import make_client
 
@@ -94,7 +95,7 @@ async def _deep_probe(
     model_v: str,
     checks: list[HealthCheck],
 ) -> None:
-    with tempfile.TemporaryDirectory() as td:
+    with tempfile.TemporaryDirectory() as td, job_jail(Path(td)):
         audio = Path(td) / "probe.ogg"
         res = await run_ffmpeg(
             [

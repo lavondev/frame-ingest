@@ -285,7 +285,16 @@ async def test_corrupt_input_gives_a_clear_error_and_leaves_nothing(cfg, tmp_pat
     notes.write_bytes(b"hello this is text" * 50)
     with pytest.raises(MediaError) as exc:
         await engine(cfg).create(notes)
-    assert exc.value.code == "corrupt_media" and "notes.mp4" in exc.value.message
+    assert exc.value.code == "unsupported_container" and "notes.mp4" in exc.value.message
+    assert list(cfg.jobs_dir.iterdir()) == []
+
+
+async def test_truncated_media_gives_a_clear_error_and_leaves_nothing(cfg, tmp_path) -> None:
+    broken = tmp_path / "broken.mp4"  # a valid MP4 signature, then nothing usable
+    broken.write_bytes(b"\x00\x00\x00\x18ftypmp42\x00\x00\x00\x00mp42isom" + b"\x00" * 64)
+    with pytest.raises(MediaError) as exc:
+        await engine(cfg).create(broken)
+    assert exc.value.code == "corrupt_media" and "broken.mp4" in exc.value.message
     assert list(cfg.jobs_dir.iterdir()) == []
 
 

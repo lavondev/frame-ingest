@@ -114,3 +114,13 @@ def config(tmp_path: Path) -> Iterator[AppConfig]:
     home = tmp_path / "home"
     home.mkdir()
     yield load_config(home, env={"OPENAI_API_KEY": "sk-test-SECRET-1234567890"})
+
+
+@pytest.fixture(autouse=True)
+def _job_jail(tmp_path_factory: pytest.TempPathFactory) -> Iterator[None]:
+    """Tests call pipeline functions directly on generated media, so the jail is the whole pytest
+    temp root. The security tests set a tighter jail of their own."""
+    from frame_ingest.guard.paths import job_jail
+
+    with job_jail(tmp_path_factory.getbasetemp()):
+        yield

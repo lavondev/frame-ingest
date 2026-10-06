@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import logging
+import os
 import shutil
 from collections.abc import Callable
 from pathlib import Path
@@ -19,6 +20,9 @@ from typing import Any
 from frame_ingest.capabilities import CapabilityMemo
 from frame_ingest.config import AppConfig, Pricing, known_caps, load_pricing, resolve_settings
 from frame_ingest.errors import FrameIngestError, redact
+from frame_ingest.guard.limits import check_disk, check_size, check_video
+from frame_ingest.guard.media import check_container
+from frame_ingest.guard.paths import job_jail, open_source_nofollow, require_regular_file
 from frame_ingest.models import (
     Estimate,
     EventType,
@@ -106,7 +110,7 @@ def _copy_and_hash(src: Path, dst: Path) -> tuple[int, str]:
     sha = hashlib.sha256()
     size = 0
     dst.parent.mkdir(parents=True, exist_ok=True)
-    with src.open("rb") as fin, dst.open("xb") as fout:
+    with os.fdopen(open_source_nofollow(src), "rb") as fin, dst.open("xb") as fout:
         while chunk := fin.read(_COPY_CHUNK):
             sha.update(chunk)
             fout.write(chunk)
@@ -171,12 +175,20 @@ class Engine:
 
         The pipeline only ever reads the copy inside the job directory.
         """
-        job_id = self.store.new_id()
+        require_regular_file(source, what="input")
         name = safe_filename(filename or source.name)
+        check_size(source.stat().st_size, self.config)
+        check_container(source, what=name)  # cheap early refusal before copying a large file
+        check_disk(self.store.root, source.stat().st_size)
+        job_id = self.store.new_id()
         dest = self.store.video_path(job_id, name)
         try:
-            size, sha = await asyncio.to_thread(_copy_and_hash, source, dest)
-            video = await probe_video(dest, filename=name, size_bytes=size, sha256=sha)
+            with job_jail(self.store.dir(job_id)):
+                size, sha = await asyncio.to_thread(_copy_and_hash, source, dest)
+                check_size(size, self.config)
+                check_container(dest, what=name)  # the copy is what ffmpeg will read
+                video = await probe_video(dest, filename=name, size_bytes=size, sha256=sha)
+                check_video(video, self.config)
         except BaseException:
             shutil.rmtree(self.store.root / job_id, ignore_errors=True)
             raise
@@ -203,15 +215,16 @@ class Engine:
     async def estimate(self, job_id: str, settings: JobSettings | None = None) -> Estimate:
         """Project frames, calls and tokens. Local only: no provider is contacted."""
         job = self.update_settings(job_id, settings) if settings else self.load(job_id)
-        est = await build_estimate(
-            self.config,
-            job.settings,
-            _video(job),
-            self.store.dir(job_id),
-            self.video_path(job),
-            self.caps_for,
-            self.pricing,
-        )
+        with job_jail(self.store.dir(job_id)):
+            est = await build_estimate(
+                self.config,
+                job.settings,
+                _video(job),
+                self.store.dir(job_id),
+                self.video_path(job),
+                self.caps_for,
+                self.pricing,
+            )
         job.estimate = est
         self.save(job)
         return est
@@ -251,7 +264,8 @@ class Engine:
         hooks = _Hooks(self, job, ctx, emit)
         ctx.progress_cb = hooks.progress
         try:
-            await run_pipeline(ctx, hooks, force=force or set())
+            with job_jail(self.store.dir(job.id)):
+                await run_pipeline(ctx, hooks, force=force or set())
             assemble_res = ctx.results[StageName.ASSEMBLE]
             job.status = JobStatus.COMPLETED
             job.outputs = {"md": assemble_res.md_file, "json": assemble_res.json_file}

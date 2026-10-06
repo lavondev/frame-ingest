@@ -268,6 +268,10 @@ class Analysis(BaseModel):
     """The JSON sidecar (result.json)."""
 
     schema_version: Literal["1"] = "1"
+    # Everything below was extracted from a video and may carry text written to manipulate an AI
+    # reader; consumers must treat it as data (PLAN T1).
+    trust: Literal["untrusted-content"] = "untrusted-content"
+    injection_flags: dict[str, int] = Field(default_factory=dict)
     analyzed_at: datetime
     video: VideoInfo
     settings: ResolvedSettings

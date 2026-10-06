@@ -105,6 +105,11 @@ class AppConfig(BaseModel):
     image_tokens: ImageTokenHeuristics = Field(default_factory=ImageTokenHeuristics)
     speech_tokens_per_minute: int = 220
 
+    # input caps (PLAN T3/T10)
+    max_file_mb: float = Field(8192, gt=0)
+    max_duration_s: float = Field(6 * 3600, gt=0)
+    max_pixels: int = Field(7680 * 4320, ge=1)
+
     # paths
     home: Path = Field(default_factory=default_home)
 

@@ -54,8 +54,8 @@ async def test_probe_real_video(sample_video: Path) -> None:
 
 
 async def test_probe_corrupt_file_is_a_clear_error(tmp_path: Path) -> None:
-    bad = tmp_path / "bad.mp4"
-    bad.write_bytes(b"this is definitely not a video" * 100)
+    bad = tmp_path / "bad.mp4"  # a valid MP4 signature, then nothing usable
+    bad.write_bytes(b"\x00\x00\x00\x18ftypmp42\x00\x00\x00\x00mp42isom" + b"\x00" * 64)
     with pytest.raises(MediaError) as ei:
         await probe_video(bad, filename="bad.mp4", size_bytes=3000, sha256="x")
     assert ei.value.code == "corrupt_media" and "bad.mp4" in ei.value.message
@@ -64,7 +64,7 @@ async def test_probe_corrupt_file_is_a_clear_error(tmp_path: Path) -> None:
 async def test_probe_audio_only_is_rejected(tmp_path: Path) -> None:
     from frame_ingest.ffmpeg import run_ffmpeg
 
-    wav = tmp_path / "a.wav"
-    await run_ffmpeg(["-y", "-f", "lavfi", "-i", "sine=duration=1", str(wav)])
+    ogg = tmp_path / "a.ogg"
+    await run_ffmpeg(["-y", "-f", "lavfi", "-i", "sine=duration=1", "-c:a", "libopus", str(ogg)])
     with pytest.raises(MediaError, match="no video stream"):
-        await probe_video(wav, filename="a.wav", size_bytes=1, sha256="x")
+        await probe_video(ogg, filename="a.ogg", size_bytes=1, sha256="x")

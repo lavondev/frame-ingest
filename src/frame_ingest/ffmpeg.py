@@ -4,12 +4,14 @@ wheel. ffprobe is not bundled, so metadata is parsed from `ffmpeg -i` output (se
 
 from __future__ import annotations
 
-import asyncio
 import functools
 from dataclasses import dataclass
 from pathlib import Path
 
 from frame_ingest.errors import FrameIngestError
+from frame_ingest.guard.ffmpeg_args import build_argv
+from frame_ingest.guard.paths import current_jail
+from frame_ingest.guard.subproc import run_process
 
 
 @functools.lru_cache(maxsize=1)
@@ -34,26 +36,14 @@ class FFResult:
 
 
 async def run_ffmpeg(
-    args: list[str], *, timeout: float | None = None, loglevel: str = "error"
+    args: list[str], *, timeout: float = 3600, loglevel: str = "error"
 ) -> FFResult:
-    """Run ffmpeg without a shell. Kills the process on cancellation or timeout."""
-    proc = await asyncio.create_subprocess_exec(
-        ffmpeg_exe(),
-        "-hide_banner",
-        "-nostdin",
-        "-loglevel",
-        loglevel,
-        *args,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-    )
-    try:
-        out, err = await asyncio.wait_for(proc.communicate(), timeout)
-    except BaseException:
-        proc.kill()
-        await proc.wait()
-        raise
-    return FFResult(proc.returncode or 0, out, err.decode("utf-8", errors="replace"))
+    """Run ffmpeg through the guard layer: the argv is rebuilt from an allowlist (inputs and
+    outputs must be inside the active job directory) and the process runs with a scrubbed
+    environment, limits, a timeout and output caps. Killed on cancellation or timeout."""
+    argv = build_argv(args, loglevel=loglevel, jail=current_jail())
+    res = await run_process([ffmpeg_exe(), *argv], timeout=timeout, cwd=current_jail())
+    return FFResult(res.returncode, res.stdout, res.stderr.decode("utf-8", errors="replace"))
 
 
 async def ffmpeg_version() -> str:
