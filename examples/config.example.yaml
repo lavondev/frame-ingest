@@ -1,0 +1,22 @@
+# Optional. Copy to $FRAME_INGEST_HOME/config.yaml (default ~/.frame-ingest/config.yaml).
+# Precedence (low -> high): built-in defaults < config.yaml < FRAME_INGEST_* env vars < per-job options.
+# Every key mirrors a field in src/frame_ingest/config.py (AppConfig).
+
+# models:
+#   transcribe: whisper-1       # whisper-1 is deprecated (shutdown 2027-02-26); try gpt-transcribe
+#   vision: gpt-6-luna
+#   correct: gpt-6-luna
+#   synthesize: gpt-6-luna
+#
+# base_urls:                    # OpenAI-compatible endpoints, per role (null = OpenAI / OPENAI_BASE_URL)
+#   vision: http://localhost:8001/v1
+#   text: http://localhost:8001/v1
+#
+# reasoning_effort: low         # none|low|medium|high|xhigh|max ; empty to not send
+# image_detail: auto            # low|high|auto
+# frame_cap: 100
+# scene_threshold: 0.30
+# min_interval_s: 10
+# max_image_px: 1024
+# vision_batch_size: 8
+# api_concurrency: 4

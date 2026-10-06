@@ -1,0 +1,17 @@
+# Optional. Copy to $FRAME_INGEST_HOME/pricing.yaml (default ~/.frame-ingest/pricing.yaml) and
+# fill in prices (USD) from your provider to see dollar estimates. Leave values empty to hide
+# cost; nothing here is hardcoded because prices change. Model ids must match your config.
+
+# USD per minute of audio, keyed by transcription model id
+transcription_per_minute:
+  whisper-1:
+  gpt-transcribe:
+
+# USD per million tokens, keyed by chat model id
+text_models:
+  gpt-6-luna:
+    input_per_mtok:
+    output_per_mtok:
+  gpt-6.1-sol:
+    input_per_mtok:
+    output_per_mtok:
