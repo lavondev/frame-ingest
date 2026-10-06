@@ -1,5 +1,6 @@
 """`frame-ingest doctor`: checks ffmpeg, the API key and that the configured models exist, with
-clear, human-readable messages. Never echoes any part of the key. `deep=True` also runs two
+clear, human-readable messages. Never echoes any part of the key. `online=False` makes no network
+calls at all (the CLI default). `deep=True` also runs two
 near-free probes (a 1 s silent clip through transcription, a tiny image through structured vision
 output) so capability fallbacks are learned up front."""
 
@@ -175,6 +176,7 @@ async def run_doctor(
     memo: CapabilityMemo,
     *,
     deep: bool = False,
+    online: bool = True,
     providers: ProviderBundle | None = None,
 ) -> DoctorReport:
     checks: list[HealthCheck] = []
@@ -199,7 +201,19 @@ async def run_doctor(
         "correct": ("text", config.models.correct),
         "synthesize": ("text", config.models.synthesize),
     }
-    if not key_present:
+    if not online:
+        # Offline: nothing leaves the machine, so the key is only reported as present or not.
+        note = (
+            "An API key is set (not verified offline)."
+            if key_present
+            else "No API key set; only the cloud profile needs one."
+        )
+        checks.append(HealthCheck(name="api key", ok=True, message=note))
+        for role, (_, mid) in models.items():
+            health.models[role] = ModelStatus(
+                role=role, id=mid, available=None, message="Not checked offline."
+            )
+    elif not key_present:
         checks.append(
             HealthCheck(
                 name="api key",

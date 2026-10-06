@@ -13,9 +13,9 @@ It is built as an **Agent Skill plus a CLI**, so any coding agent that supports 
 - Local models: harnesses launched through Ollama work the same way, and a local profile can use
   Ollama for the vision and text stages.
 
-> **Status: pre-alpha.** Not usable from the command line yet. The processing engine has been
-> ported from faircopy and passes its offline test suite (milestone M0); the CLI commands and the
-> skill come next. Follow progress in `docs/PLAN.md`.
+> **Status: pre-alpha.** The processing engine (milestone M0) and a first CLI (M1: `doctor`,
+> `probe`, `estimate`, `run`) work on local files with the offline `fake` profile. URLs, real
+> providers, agent mode and the skill come next. Follow progress in `docs/PLAN.md`.
 
 ## What makes it different
 
