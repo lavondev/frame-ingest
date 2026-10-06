@@ -18,7 +18,9 @@ The pipeline was ported from `lavondev/faircopy` (`backend/app/`) in milestone M
 Supabase sync and `.env` loading were dropped. Design rationale: `docs/ARCHITECTURE.md`.
 
 - `src/frame_ingest/engine.py`: runs a job on a local file (create, estimate, run/resume, cancel).
-  This is what the CLI wraps.
+- `src/frame_ingest/cli.py`: the CLI (`doctor`, `probe`, `estimate`, `run`) wrapping the engine.
+  `--json` prints one object on stdout, progress goes to stderr; exit codes are in its docstring.
+  `profiles.py` maps `--profile` to providers (only `fake` until M4/M5).
 - `src/frame_ingest/pipeline/`: the eight stages (`probe → audio → transcribe → frames → vision →
   correct → synthesize → assemble`), the content-chained stage cache and the runner.
 - `src/frame_ingest/providers/`: `Transcriber` / `VisionAnalyzer` / `TextLLM` protocols, the

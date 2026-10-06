@@ -1,6 +1,6 @@
 # frame-ingest — plan and architecture
 
-Status: draft v1, 2026-10-06. Written for hand-off to Claude Code. Repo scaffold is in place and milestone M0 (pipeline ported from faircopy) is done; next is M1 (CLI skeleton). The section 10 decisions other than the repo are still open.
+Status: draft v1, 2026-10-06. Written for hand-off to Claude Code. Repo scaffold is in place and milestones M0 (pipeline ported from faircopy) and M1 (CLI skeleton) are done; next is M2 (security core). The section 10 decisions other than the repo are still open.
 Source project: `faircopy` (lavondev/faircopy). Target: an open-source Agent Skill, `/frame-ingest <video file | URL>`, that works across coding-agent harnesses.
 
 ---
@@ -260,7 +260,7 @@ argument-hint: <video file or URL>
 
 **M0. Decisions and extraction.** *(Done 2026-10-06, except the section 10 decisions, which are still open.)* Resolve section 10. Create the new layout; move pipeline/providers/models/config/storage/errors/ffmpeg into `src/frame_ingest/`; delete Supabase/FastAPI from core; port tests; golden doc still byte-identical. *Done when:* `pytest` is green offline and `ruff` + strict `mypy` pass.
 
-**M1. CLI skeleton.** `doctor`, `probe`, `estimate`, `run` (local file, fake provider), `--json`, exit codes, job workspace under `FRAME_INGEST_HOME`. *Done when:* `frame-ingest run sample.mp4 --profile fake` produces the golden document.
+**M1. CLI skeleton.** *(Done 2026-10-06.)* `doctor`, `probe`, `estimate`, `run` (local file, fake provider), `--json`, exit codes, job workspace under `FRAME_INGEST_HOME`. *Done when:* `frame-ingest run sample.mp4 --profile fake` produces the golden document. (Met as: a document with the golden file's exact skeleton; the golden file itself stays pinned by `test_assemble.py` because it uses fixed analysis data. Deviations: `-` as the input reads a path from stdin instead of a separate `--input -`; `doctor` is offline unless `--online`; `--profile` is required on `run` and `estimate`; only `fake` is runnable until M4/M5; `probe` and `estimate` take local files only.)
 
 **M2. Security core (before any URL code).** `guard/` (path jail, subprocess wrapper with limits and env scrub, ffmpeg argv builder, container allowlist, redaction, untrusted-text sanitizer, banner/frontmatter trust fields) plus the section 4.3 fixtures that apply to local files. *Done when:* the security suite passes and the flag-enumeration test exists.
 
