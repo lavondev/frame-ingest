@@ -1,0 +1,29 @@
+# secrets
+.env
+.env.*
+!.env.example
+config.toml
+*.pem
+*.key
+
+# python
+.venv/
+__pycache__/
+*.pyc
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# frame-ingest runtime data (jobs, downloads, frames, caches, outputs)
+.frame-ingest/
+frame-ingest-out/
+
+# editors / OS
+.DS_Store
+.idea/
+.vscode/
