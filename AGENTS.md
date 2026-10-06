@@ -12,15 +12,24 @@ how to drive the CLI. The user-facing goal: install the skill, type `/frame-inge
 the milestone plan (M0 to M8) and the open decisions. Work milestone by milestone; do not skip
 ahead (in particular, **no URL or subprocess code before the M2 guard layer exists**).
 
-## Source code to port
+## Code map
 
-The pipeline originates in `lavondev/faircopy` (branch `faircopy`, `backend/app/`). Port, do not
-rewrite: `pipeline/*`, `providers/*`, `models`, `config` (drop the Supabase fields), `storage`,
-`errors`, `ffmpeg`, `health` (becomes `doctor`), `capabilities`, plus its offline tests and golden
-file. Drop `api.py`, `main.py`, `jobs.py`, `remote.py`, `events.py`, the frontend and the
-Supabase/FastAPI/uvicorn dependencies. Keep the design rationale from its `DESIGN.md`
-(vision before correction, sampled frames, content-chained stage cache, fail-soft policy,
-deterministic output). See PLAN section 3.6.
+The pipeline was ported from `lavondev/faircopy` (`backend/app/`) in milestone M0; the web app,
+Supabase sync and `.env` loading were dropped. Design rationale: `docs/ARCHITECTURE.md`.
+
+- `src/frame_ingest/engine.py`: runs a job on a local file (create, estimate, run/resume, cancel).
+  This is what the CLI wraps.
+- `src/frame_ingest/pipeline/`: the eight stages (`probe → audio → transcribe → frames → vision →
+  correct → synthesize → assemble`), the content-chained stage cache and the runner.
+- `src/frame_ingest/providers/`: `Transcriber` / `VisionAnalyzer` / `TextLLM` protocols, the
+  OpenAI-compatible client and deterministic fakes.
+- `config.py` (the only module that names models), `models.py`, `storage.py` (atomic writes),
+  `errors.py` (typed errors and secret redaction), `ffmpeg.py`, `doctor.py`, `capabilities.py`.
+- `tests/golden/analysis.md`: the golden document. Regenerate only on purpose
+  (`UPDATE_GOLDEN=1 uv run pytest tests/test_assemble.py`) and review the diff.
+
+`ffmpeg.py` is the only place that starts a process (ported as is: argv list, no shell, timeout).
+M2 moves it behind `guard/subproc.py`; do not add other process or network call sites before then.
 
 ## Commands
 

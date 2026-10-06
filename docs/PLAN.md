@@ -1,6 +1,6 @@
 # frame-ingest — plan and architecture
 
-Status: draft v1, 2026-10-06. Written for hand-off to Claude Code. Repo scaffold (project skeleton, placeholder skill, CI) is in place; next is milestone M0 (port the pipeline from faircopy).
+Status: draft v1, 2026-10-06. Written for hand-off to Claude Code. Repo scaffold is in place and milestone M0 (pipeline ported from faircopy) is done; next is M1 (CLI skeleton). The section 10 decisions other than the repo are still open.
 Source project: `faircopy` (lavondev/faircopy). Target: an open-source Agent Skill, `/frame-ingest <video file | URL>`, that works across coding-agent harnesses.
 
 ---
@@ -258,7 +258,7 @@ argument-hint: <video file or URL>
 
 ## 8. Phased build plan (each milestone ends with passing tests)
 
-**M0. Decisions and extraction.** Resolve section 10. Create the new layout; move pipeline/providers/models/config/storage/errors/ffmpeg into `src/frame_ingest/`; delete Supabase/FastAPI from core; port tests; golden doc still byte-identical. *Done when:* `pytest` is green offline and `ruff` + strict `mypy` pass.
+**M0. Decisions and extraction.** *(Done 2026-10-06, except the section 10 decisions, which are still open.)* Resolve section 10. Create the new layout; move pipeline/providers/models/config/storage/errors/ffmpeg into `src/frame_ingest/`; delete Supabase/FastAPI from core; port tests; golden doc still byte-identical. *Done when:* `pytest` is green offline and `ruff` + strict `mypy` pass.
 
 **M1. CLI skeleton.** `doctor`, `probe`, `estimate`, `run` (local file, fake provider), `--json`, exit codes, job workspace under `FRAME_INGEST_HOME`. *Done when:* `frame-ingest run sample.mp4 --profile fake` produces the golden document.
 

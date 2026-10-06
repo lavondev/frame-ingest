@@ -13,8 +13,9 @@ It is built as an **Agent Skill plus a CLI**, so any coding agent that supports 
 - Local models: harnesses launched through Ollama work the same way, and a local profile can use
   Ollama for the vision and text stages.
 
-> **Status: pre-alpha.** Nothing is usable yet. The repository currently holds the plan, the
-> project skeleton and a placeholder skill. Follow progress in `docs/PLAN.md`.
+> **Status: pre-alpha.** Not usable from the command line yet. The processing engine has been
+> ported from faircopy and passes its offline test suite (milestone M0); the CLI commands and the
+> skill come next. Follow progress in `docs/PLAN.md`.
 
 ## What makes it different
 
@@ -31,6 +32,7 @@ It is built as an **Agent Skill plus a CLI**, so any coding agent that supports 
 ## Documentation
 
 - [`docs/PLAN.md`](docs/PLAN.md): architecture, security model, roadmap and open decisions.
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md): why the pipeline works the way it does.
 - [`SECURITY.md`](SECURITY.md): how to report a vulnerability.
 - [`AGENTS.md`](AGENTS.md): instructions for coding agents working in this repository.
 
