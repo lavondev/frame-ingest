@@ -3,7 +3,8 @@
 M1 commands: `doctor`, `probe`, `estimate`, `run`, all on local files and all offline unless
 `doctor --online` is given. The rest of the planned surface (docs/PLAN.md, section 3.2) arrives
 with its milestone. No command runs an external process other than through the engine's ffmpeg
-wrapper until the guard layer (M2) exists, and none accepts a URL before M3.
+wrapper. URLs are accepted by fetch/probe/estimate/prepare/run and downloaded first through
+`fetch/` (a pinned-IP fetcher or a hardened yt-dlp); ffmpeg only ever reads local files.
 
 Conventions (the agent-facing contract):
 
@@ -44,7 +45,14 @@ from frame_ingest.agent.validate_doc import (
 from frame_ingest.budget import Budget, check_estimate
 from frame_ingest.capabilities import CapabilityMemo
 from frame_ingest.config import AppConfig, ConfigError, load_config
-from frame_ingest.doctor import HealthCheck, check_local, report_dict, run_doctor
+from frame_ingest.doctor import (
+    HealthCheck,
+    check_local,
+    check_sandbox,
+    check_ytdlp,
+    report_dict,
+    run_doctor,
+)
 from frame_ingest.egress import EgressDenied, build_plan, enforce
 from frame_ingest.engine import Engine, ProviderFactory
 from frame_ingest.errors import (
@@ -55,8 +63,16 @@ from frame_ingest.errors import (
     install_log_redaction,
     redact,
 )
+from frame_ingest.export import ExportRefused, export_document
+from frame_ingest.fetch.acquire import attach_captions, fetch_url
+from frame_ingest.fetch.policy import UrlRejected
+from frame_ingest.fetch.proxy import EgressProxy
+from frame_ingest.fetch.ytdlp import YtdlpTooOld, YtdlpUnavailable, list_playlist
+from frame_ingest.guard import sandbox
 from frame_ingest.guard.netblock import OfflineViolation, block_network
 from frame_ingest.guard.paths import PathRejected
+from frame_ingest.guard.sandbox import SandboxUnavailable
+from frame_ingest.guard.ytdlp_args import MAX_PLAYLIST_ITEMS
 from frame_ingest.models import EventType, Job, JobSettings, JobStatus
 from frame_ingest.profiles import PROFILES, ProfileUnavailable, profile_config, resolve_profile
 
@@ -68,7 +84,7 @@ EXIT_UNAVAILABLE = 4
 EXIT_NOT_FOUND = 5
 EXIT_INTERRUPTED = 130
 
-PLANNED_COMMANDS = ("fetch", "clean")
+PLANNED_COMMANDS = ("clean",)
 
 _URL_RE = re.compile(r"^[A-Za-z][A-Za-z0-9+.\-]*://")
 _ECHO_LIMIT = 200
@@ -88,12 +104,21 @@ class Result:
 
 
 def _exit_code_for(exc: FrameIngestError) -> int:
-    if isinstance(exc, InputRejected | MediaError | PathRejected):
+    if isinstance(exc, InputRejected | MediaError | PathRejected | UrlRejected):
         return EXIT_INPUT
     if isinstance(exc, JobNotFound):
         return EXIT_NOT_FOUND
     if isinstance(
-        exc, ProfileUnavailable | ConfigError | FatalProviderError | EgressDenied | OfflineViolation
+        exc,
+        ProfileUnavailable
+        | ConfigError
+        | FatalProviderError
+        | EgressDenied
+        | OfflineViolation
+        | YtdlpUnavailable
+        | YtdlpTooOld
+        | ExportRefused
+        | SandboxUnavailable,
     ):
         return EXIT_UNAVAILABLE
     return EXIT_FAILED
@@ -113,8 +138,7 @@ def _resolve_input(raw: str, *, what: str = "file") -> Path:
             raise InputRejected("Expected a path on stdin but got nothing.")
     if _URL_RE.match(raw):
         raise InputRejected(
-            f"{_echo(raw)} looks like a URL. URL ingest is not available yet (planned for M3); "
-            f"pass a local {what}."
+            f"{_echo(raw)} looks like a URL, but this command needs a local {what}."
         )
     try:
         path = Path(raw).expanduser()
@@ -131,9 +155,12 @@ def _resolve_input(raw: str, *, what: str = "file") -> Path:
 def _settings(args: argparse.Namespace) -> JobSettings | None:
     frame_cap = getattr(args, "frame_cap", None)
     language = getattr(args, "language", None)
-    if frame_cap is None and language is None:
+    diarize = bool(getattr(args, "diarize", False))
+    if getattr(args, "profile", None) == "local" and diarize:
+        raise _usage("--diarize needs a provider that supports speaker labels (--profile cloud).")
+    if frame_cap is None and language is None and not diarize:
         return None
-    return JobSettings(frame_cap=frame_cap, language=language)
+    return JobSettings(frame_cap=frame_cap, language=language, diarize=diarize or None)
 
 
 def _no_providers() -> NoReturn:
@@ -159,6 +186,9 @@ async def _cmd_doctor(args: argparse.Namespace, config: AppConfig) -> Result:
     online = args.online or args.deep  # --deep spends a fraction of a cent: it is its own consent
     providers = resolve_profile("cloud", config).factory() if args.deep else None
     report = await run_doctor(config, memo, online=online, deep=args.deep, providers=providers)
+    for extra_check in (await check_ytdlp(), await check_sandbox()):
+        report.checks.append(extra_check)
+        report.ok = report.ok and extra_check.ok
     if args.profile == "local":
         extra: list[HealthCheck] = await check_local(config)
         report.checks += extra
@@ -172,11 +202,10 @@ async def _cmd_doctor(args: argparse.Namespace, config: AppConfig) -> Result:
 
 
 async def _cmd_probe(args: argparse.Namespace, config: AppConfig) -> Result:
-    source = _resolve_input(args.input)
     # ffmpeg only ever sees a file inside a job directory (AGENTS.md rule 4), so probing makes a
-    # private copy there and removes it afterwards.
+    # private copy there (downloading first for a URL) and removes it afterwards.
     engine = _engine(config)
-    job = await engine.create(source)
+    job = await _create_from(args.input, engine, None, None, False)
     try:
         video = job.video
         if video is None:  # pragma: no cover - create() always probes
@@ -204,14 +233,46 @@ async def _job_for(
         if args.input is not None:
             raise _usage("Give either an input or --job, not both.")
         if settings is not None:
-            raise _usage("--frame-cap and --language apply only when creating a job.")
+            raise _usage("--frame-cap, --language and --diarize apply only when creating a job.")
         job = engine.load(args.job)
         if profile and job.profile not in (None, profile):
             raise _usage(f"Job {job.id} was created with profile '{job.profile}', not '{profile}'.")
         return job
     if args.input is None:
         raise _usage("Give an input file or --job <id>.")
-    return await engine.create(_resolve_input(args.input), settings, profile=profile)
+    return await _create_from(
+        args.input, engine, settings, profile, getattr(args, "offline", False)
+    )
+
+
+def _stdin_or(raw: str) -> str:
+    if raw != "-":
+        return raw
+    value = sys.stdin.readline().strip()
+    if not value:
+        raise InputRejected("Expected a path or URL on stdin but got nothing.")
+    return value
+
+
+async def _create_from(
+    raw: str, engine: Engine, settings: JobSettings | None, profile: str | None, offline: bool
+) -> Job:
+    """A new job from a local file or a URL (downloaded first, into a private directory)."""
+    value = _stdin_or(raw)
+    if not _URL_RE.match(value):
+        return await engine.create(_resolve_input(value), settings, profile=profile)
+    if offline:
+        raise EgressDenied("--offline forbids downloading a URL.")
+    acquired = await fetch_url(value, engine.config)
+    print(f"downloaded from {acquired.source_url}", file=sys.stderr)
+    try:
+        job = await engine.create(
+            acquired.path, settings, profile=profile, source_url=acquired.source_url, move=True
+        )
+        attach_captions(engine.store.dir(job.id), acquired)
+    finally:
+        acquired.cleanup()
+    return job
 
 
 class _Usage(Exception):
@@ -285,7 +346,7 @@ async def _cmd_run(args: argparse.Namespace, config: AppConfig) -> Result:
         budget = Budget(args.max_cost, engine.pricing, free=resolved.free)
 
     with block_network() if args.offline else nullcontext():
-        job = await engine.run(job.id, on_event=_progress, budget=budget)
+        job = await engine.run(job.id, on_event=_progress, budget=budget, metrics=args.metrics)
     job_dir = str(engine.store.dir(job.id))
     payload: dict[str, Any] = {
         "ok": job.status == JobStatus.COMPLETED,
@@ -308,6 +369,61 @@ async def _cmd_run(args: argparse.Namespace, config: AppConfig) -> Result:
     payload["outputs"] = {key: str(engine.output_path(job, key)) for key in job.outputs}
     lines = [f"job {job.id}: {job.chapter_count} chapters, {len(job.warnings)} warnings"]
     lines += [f"{key}: {path}" for key, path in payload["outputs"].items()]
+    return Result(payload, lines)
+
+
+async def _fetch_playlist(args: argparse.Namespace, config: AppConfig) -> Result:
+    if not 1 <= args.max_items <= MAX_PLAYLIST_ITEMS:
+        raise _usage(f"--max-items must be between 1 and {MAX_PLAYLIST_ITEMS}.")
+    url = _stdin_or(args.input)
+    if not _URL_RE.match(url):
+        raise _usage("--allow-playlist needs a URL.")
+    engine = _engine(config)
+    async with EgressProxy() as guard:
+        urls, refused = await list_playlist(url, max_items=args.max_items, proxy=guard.url)
+    jobs: list[dict[str, Any]] = []
+    for item in urls:  # each item is validated and downloaded on its own, one video at a time
+        try:
+            job = await _create_from(item, engine, None, None, False)
+            jobs.append({"url": item.split("?", 1)[0], "job_id": job.id})
+        except FrameIngestError as exc:
+            jobs.append({"url": item.split("?", 1)[0], "error": exc.message})
+    payload = {
+        "ok": any("job_id" in j for j in jobs),
+        "refused_entries": refused,
+        "items": jobs,
+    }
+    lines = [f"{j.get('job_id') or 'failed'}: {j['url']}" for j in jobs]
+    lines.append(f"{len(jobs)} item(s) tried, {refused} entr(ies) refused")
+    return Result(payload, lines, EXIT_OK if payload["ok"] else EXIT_FAILED)
+
+
+async def _cmd_fetch(args: argparse.Namespace, config: AppConfig) -> Result:
+    if args.allow_playlist:
+        return await _fetch_playlist(args, config)
+    engine = _engine(config)
+    job = await _create_from(args.input, engine, None, None, False)
+    video = job.video
+    if video is None:  # pragma: no cover - create() always probes
+        raise MediaError("The file could not be probed.")
+    job_dir = engine.store.dir(job.id)
+    captions = next(
+        (p.name for p in sorted(job_dir.glob("captions*.*")) if p.suffix in {".vtt", ".srt"}), None
+    )
+    payload = {
+        "ok": True,
+        "job_id": job.id,
+        "source_url": job.source_url,
+        "file": str(engine.video_path(job)),
+        "size_bytes": video.size_bytes,
+        "sha256": video.sha256,
+        "duration_s": video.duration_s,
+        "captions": captions,
+    }
+    lines = [
+        f"job {job.id}: {video.filename}, {video.duration_s:.1f}s, {video.size_bytes} bytes"
+        + (f", captions: {captions}" if captions else ""),
+    ]
     return Result(payload, lines)
 
 
@@ -343,7 +459,7 @@ async def _cmd_prepare(args: argparse.Namespace, config: AppConfig) -> Result:
 async def _cmd_assemble(args: argparse.Namespace, config: AppConfig) -> Result:
     engine = _engine(config)
     try:
-        job = await assemble_job(engine, args.job)
+        job = await assemble_job(engine, args.job, metrics=args.metrics)
     except ValidationFailed as exc:
         payload: dict[str, Any] = {
             "ok": False,
@@ -365,6 +481,21 @@ async def _cmd_assemble(args: argparse.Namespace, config: AppConfig) -> Result:
     lines = [f"job {job.id}: {job.chapter_count} chapters, {len(job.warnings)} warnings"]
     lines += [f"{key}: {path}" for key, path in outputs.items()]
     return Result(payload, lines)
+
+
+async def _cmd_export(args: argparse.Namespace, config: AppConfig) -> Result:
+    engine = _engine(config)
+    job = engine.load(args.job)
+    md = engine.output_path(job, "md")
+    side = engine.output_path(job, "json")
+    written = export_document(config, md, side, args.to, args.style)
+    payload = {
+        "ok": True,
+        "job_id": job.id,
+        "style": args.style,
+        "written": [str(p) for p in written],
+    }
+    return Result(payload, [f"wrote {p}" for p in written])
 
 
 async def _cmd_validate(args: argparse.Namespace, config: AppConfig) -> Result:
@@ -397,6 +528,8 @@ async def _cmd_scan(args: argparse.Namespace, config: AppConfig) -> Result:
 
 
 _HANDLERS = {
+    "export": _cmd_export,
+    "fetch": _cmd_fetch,
     "prepare": _cmd_prepare,
     "assemble": _cmd_assemble,
     "validate": _cmd_validate,
@@ -415,12 +548,17 @@ def _add_common(sub: argparse.ArgumentParser) -> None:
 
 def _add_input(sub: argparse.ArgumentParser, *, profile: bool) -> None:
     sub.add_argument(
-        "input", nargs="?", help="local video file, or '-' to read the path from stdin"
+        "input", nargs="?", help="local video file or http(s) URL, or '-' to read it from stdin"
     )
     sub.add_argument("--job", metavar="ID", help="use an existing job (resumes it for `run`)")
     sub.add_argument("--frame-cap", type=int, help="maximum number of frames to analyse")
     sub.add_argument("--language", help="spoken language hint, e.g. 'en'")
     if profile:
+        sub.add_argument(
+            "--diarize",
+            action="store_true",
+            help="label speakers (needs a provider that supports it)",
+        )
         sub.add_argument(
             "--profile",
             required=True,
@@ -465,9 +603,24 @@ def build_parser() -> argparse.ArgumentParser:
         "--profile", choices=("local",), help="also check readiness of the local profile"
     )
 
+    fetch = subs.add_parser(
+        "fetch", help="download a URL (or adopt a file) into a job, no analysis"
+    )
+    _add_common(fetch)
+    fetch.add_argument("input", help="http(s) URL or local file, or '-' to read it from stdin")
+    fetch.add_argument(
+        "--allow-playlist",
+        action="store_true",
+        help=f"fetch up to --max-items videos of a playlist (at most {MAX_PLAYLIST_ITEMS})",
+    )
+    fetch.add_argument("--max-items", type=int, default=10, help="playlist item cap (default 10)")
+    fetch.set_defaults(job=None)
+
     probe = subs.add_parser("probe", help="duration, resolution, fps and audio of a local file")
     _add_common(probe)
-    probe.add_argument("input", help="local video file, or '-' to read the path from stdin")
+    probe.add_argument(
+        "input", help="local video file or http(s) URL, or '-' to read it from stdin"
+    )
 
     estimate = subs.add_parser("estimate", help="frames, calls and tokens; no network egress")
     _add_common(estimate)
@@ -476,6 +629,9 @@ def build_parser() -> argparse.ArgumentParser:
     run = subs.add_parser("run", help="run the full pipeline on a local file")
     _add_common(run)
     _add_input(run, profile=True)
+    run.add_argument(
+        "--metrics", action="store_true", help="add pacing and hook metrics (deterministic)"
+    )
     run.add_argument(
         "--allow-egress",
         action="store_true",
@@ -496,6 +652,17 @@ def build_parser() -> argparse.ArgumentParser:
     assemble = subs.add_parser("assemble", help="agent mode: validate outputs, write the document")
     _add_common(assemble)
     assemble.add_argument("job", help="job id from `prepare`")
+    assemble.add_argument(
+        "--metrics", action="store_true", help="add pacing and hook metrics (deterministic)"
+    )
+
+    export = subs.add_parser(
+        "export", help="copy a finished document into a folder you listed in config"
+    )
+    _add_common(export)
+    export.add_argument("job", help="job id of a finished job")
+    export.add_argument("--to", required=True, help="folder inside a configured export root")
+    export.add_argument("--style", choices=("markdown", "obsidian"), default="markdown")
 
     validate = subs.add_parser("validate", help="check a finished document against the format")
     _add_common(validate)
@@ -544,6 +711,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         config = load_config()
         install_log_redaction(_secrets(config))
+        sandbox.configure(config.sandbox)
         result = asyncio.run(_HANDLERS[args.command](args, config))
     except _Usage as exc:
         return _fail(args, "usage", str(exc), EXIT_USAGE)

@@ -1,20 +1,22 @@
 ---
 name: frame-ingest
-description: Turns a video (local file) into a structured, citable Markdown document with a corrected transcript, chapters, summaries, glossary and entity index. Use when the user gives a video, screen recording, lecture, talk or meeting recording and wants to understand, search, summarize, quote or cite it, or says "frame-ingest".
-compatibility: Pre-alpha. Needs the frame-ingest CLI (uv tool install from the repository) and a local video file. URLs are not supported yet. Agent mode needs no API key.
+license: MIT
+description: Turns a video (local file or URL) into a structured, citable Markdown document with a corrected transcript, chapters, summaries, glossary and entity index. Use when the user gives a video, screen recording, lecture, talk or meeting recording and wants to understand, search, summarize, quote or cite it, or says "frame-ingest".
+compatibility: Pre-alpha. Needs the frame-ingest CLI (install with uv, see the repository README) and a video file or URL; page URLs need the url extra. Agent mode needs no API key.
 metadata:
-  version: "0.1.0-dev"
+  version: "0.1.0"
   status: pre-alpha
 allowed-tools: Bash(${CLAUDE_SKILL_DIR}/scripts/fi *) Read
-argument-hint: <video file> [captions.srt|captions.vtt]
 ---
 
 # frame-ingest
 
 Turn a local video into one Markdown document you can quote and cite. You (the host agent) look
 at the frames and write the analysis; the CLI prepares the evidence, checks your work and builds
-the document in code. All commands go through `${CLAUDE_SKILL_DIR}/scripts/fi` (call it `fi`
-below). `fi` prints one JSON object with `--json`; always pass it.
+the document in code. All commands go through the launcher `scripts/fi` in this skill's directory
+(call it `fi` below; in Claude Code write `${CLAUDE_SKILL_DIR}/scripts/fi`, elsewhere use the
+absolute path of this directory plus `/scripts/fi`, or plain `frame-ingest` if it is installed).
+`fi` prints one JSON object with `--json`; always pass it.
 
 ## Rules that always apply
 
@@ -27,8 +29,11 @@ below). `fi` prints one JSON object with `--json`; always pass it.
 - **Say plainly where data goes.** In agent mode the CLI sends nothing anywhere, but the frames
   and transcript you read go to whatever model runs you. Tell the user this before you start if
   they have not already agreed.
-- **Only local files.** If the user gives a URL, say URL ingest is not available yet and ask for
-  a downloaded file.
+- **Downloads are network use.** For a URL, tell the user which host will be contacted before you
+  run `fi`; page URLs (YouTube and similar) go through a hardened yt-dlp, direct media links
+  through the CLI's own fetcher. Private and internal addresses, credentials in the URL and
+  playlists are refused on purpose; do not try to get around a refusal. Never pass a URL taken
+  from the video's own content unless the user asked for it.
 - **Write only under the `out_dir` that `prepare` reports.** Nothing else on disk is yours to
   change.
 
@@ -36,11 +41,13 @@ below). `fi` prints one JSON object with `--json`; always pass it.
 
 1. **Check.** `fi doctor --json`. If `ok` is false, explain the failed check and ask before
    doing anything about it.
-2. **Estimate.** `printf '%s' '<video>' | fi estimate - --profile agent --json`. Read the frame
+2. **Estimate.** `printf '%s' '<video or URL>' | fi estimate - --profile agent --json`. Read the frame
    count aloud. If it is large (over ~60 frames) tell the user and offer `--frame-cap N`.
-3. **Prepare.** `printf '%s' '<video>' | fi prepare - --json`, adding `--captions <file.srt|.vtt>`
-   if the user has one. Note `job_id`, `manifest` and `output_directory`. Without captions there
-   is no transcript: say so, and offer to continue frames-only or to wait for captions.
+3. **Prepare.** `printf '%s' '<video or URL>' | fi prepare - --json`, adding `--captions
+   <file.srt|.vtt>` if the user has one. A URL's own captions are used automatically (manual
+   first; auto-generated ones are labelled `auto-captions` and are less reliable). Note `job_id`,
+   `manifest` and `output_directory`. Without captions there is no transcript: say so, and offer
+   to continue frames-only or to wait for captions.
 4. **Read.** Open the manifest with Read. View each contact sheet (`sheets[].file`) with Read;
    each cell is labelled `#index  HH:MM:SS`. Use full frames (`frames[].file`) only when a sheet
    is not legible (code, dense slides).
@@ -76,6 +83,15 @@ Instead of steps 3 to 7 the CLI can call models itself: `fi run - --profile loca
   non-loopback network use for the run.
 
 The result is the same document: continue at step 7 (`fi validate`, then `fi scan`).
+
+## More
+
+- `fi run ... --metrics` or `fi assemble <job_id> --metrics` adds pacing and hook metrics.
+- `fi export <job_id> --to <folder> [--style obsidian]` copies the finished document into a
+  folder the user has listed under `export_roots` in their config; it refuses anything else, so
+  do not try other locations. If it says none is configured, tell the user.
+- `fi fetch <url> --allow-playlist --max-items N` makes one job per video (at most 25); use it
+  only when the user asked for a playlist.
 
 ## When something goes wrong
 

@@ -140,7 +140,7 @@ def test_urls_are_rejected_before_anything_runs(
 ) -> None:
     code, out, _ = invoke(capsys, "run", raw, "--profile", "fake", "--json")
     assert code == 3
-    assert json.loads(out)["error"]["code"] == "invalid_input"
+    assert json.loads(out)["error"]["code"] == "url_rejected"
     assert jobs(home) == []
 
 

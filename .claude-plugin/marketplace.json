@@ -1,0 +1,17 @@
+{
+  "name": "frame-ingest",
+  "owner": { "name": "lavondev" },
+  "metadata": {
+    "description": "frame-ingest: video to structured, citable Markdown, as an Agent Skill plus CLI."
+  },
+  "plugins": [
+    {
+      "name": "frame-ingest",
+      "source": "./",
+      "description": "Turn a video (local file or URL) into a structured, citable Markdown document.",
+      "version": "0.1.0",
+      "category": "productivity",
+      "keywords": ["video", "transcript", "markdown", "citations"]
+    }
+  ]
+}

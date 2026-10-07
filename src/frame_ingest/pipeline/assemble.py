@@ -33,6 +33,7 @@ from frame_ingest.models import (
 from frame_ingest.pipeline.context import PipelineContext, StageResult
 from frame_ingest.pipeline.correct import CorrectionResult
 from frame_ingest.pipeline.frames import FramesResult
+from frame_ingest.pipeline.metrics import compute_metrics
 from frame_ingest.pipeline.synthesize import SynthesisResult
 from frame_ingest.pipeline.textutil import normalize
 from frame_ingest.pipeline.timefmt import fmt_range, fmt_ts, ts_anchor
@@ -185,9 +186,11 @@ def render_markdown(a: Analysis) -> str:
         "correct": a.settings.correct_model if segments else None,
         "synthesize": a.settings.synthesize_model,
     }
-    front = {
+    front: dict[str, object] = {
+        "faircopy_format": 1,
         "title": clean(title),
         "source_file": clean(a.video.filename),
+        "input_sha256": a.video.sha256,
         "duration": fmt_ts(d),
         "duration_seconds": round(d, 2),
         "resolution": resolution,
@@ -202,6 +205,11 @@ def render_markdown(a: Analysis) -> str:
         "timestamp_precision": a.transcript.timestamp_precision,
         "injection_flags": a.injection_flags,
     }
+    if a.source_url:
+        front["source_url"] = clean(a.source_url)
+        front["retrieved_at"] = (
+            a.retrieved_at.strftime("%Y-%m-%dT%H:%M:%SZ") if a.retrieved_at else None
+        )
     out: list[str] = [
         "---",
         yaml.safe_dump(front, sort_keys=False, allow_unicode=True).rstrip(),
@@ -287,8 +295,10 @@ def render_markdown(a: Analysis) -> str:
         elif not cseg:
             out.append("_No speech in this chapter._")
         for s in cseg:
+            who = f" {inline(s.speaker)}:" if s.speaker else ""
             out.append(
-                f'<a id="{anchors.by_seg[s.id]}"></a>**[{fmt_ts(s.start, d)}]** {inline(s.text)}'
+                f'<a id="{anchors.by_seg[s.id]}"></a>**[{fmt_ts(s.start, d)}]**{who} '
+                f"{inline(s.text)}"
             )
         out.append("")
 
@@ -328,8 +338,47 @@ def render_markdown(a: Analysis) -> str:
     out += [f"- {inline(q)}" for q in syn.open_questions] or ["_None identified._"]
     out.append("")
 
+    if a.metrics is not None:
+        out += _render_metrics(a)
     out += _render_appendix(a)
     return "\n".join(out).rstrip() + "\n"
+
+
+def _render_metrics(a: Analysis) -> list[str]:
+    m = a.metrics
+    if m is None:  # pragma: no cover - guarded by the caller
+        return []
+
+    def pct(x: float | None) -> str:
+        return f"{x * 100:.0f}%" if x is not None else "n/a"
+
+    def num(x: float | None, unit: str = "") -> str:
+        return f"{x:g}{unit}" if x is not None else "n/a"
+
+    h = m.hook
+    out = ["## Pacing and Hook {#pacing}", ""]
+    out += [
+        f"- **Speaking rate:** {num(m.words_per_minute, ' words/min')}; "
+        f"speech covers {pct(m.speech_coverage)} of the video; "
+        f"longest silence {num(m.longest_silence_s, ' s')}",
+        f"- **Visual pacing:** {m.scene_changes_per_minute:g} scene-change frames per minute",
+        f"- **Hook (first {h.window_s:g} s):** first speech at {num(h.first_speech_at_s, ' s')}, "
+        f"{h.words_in_window} words, {h.scene_changes_in_window} scene change(s), "
+        f"{h.on_screen_text_blocks_in_window} on-screen text block(s)",
+    ]
+    if h.opening_line:
+        out.append(f'- **Opening line:** "{inline(h.opening_line)}"')
+    by_id = {c.id: c for c in a.chapters}
+    rows = [
+        f"  - [{cid}](#{cid}) {inline(by_id[cid].title)}: {num(p.words_per_minute, ' words/min')}, "
+        f"speech {pct(p.speech_coverage)}"
+        for p in m.chapters
+        if (cid := p.chapter_id) in by_id
+    ]
+    if rows:
+        out += ["- **By chapter:**", *rows]
+    out.append("")
+    return out
 
 
 def _render_appendix(a: Analysis) -> list[str]:
@@ -433,6 +482,8 @@ def build_analysis(ctx: PipelineContext) -> Analysis:
         failed_batches=ctx.all_failed_batches(),
     )
     return Analysis(
+        source_url=ctx.source_url,
+        retrieved_at=ctx.retrieved_at,
         analyzed_at=utcnow(),
         video=ctx.video,
         settings=ctx.settings,
@@ -458,6 +509,8 @@ async def run(
     analysis = build_analysis(ctx)
     analysis.injection_flags = flags
     analysis.mode = mode
+    if ctx.metrics:
+        analysis.metrics = compute_metrics(analysis)
     analysis.notes.warnings = ctx.all_warnings() + ctx.current_warnings()
     md = render_markdown(analysis)
     bad = check_timestamps(md, ctx.video.duration_s)

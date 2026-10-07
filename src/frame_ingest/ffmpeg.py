@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from frame_ingest.errors import FrameIngestError
+from frame_ingest.guard import sandbox
 from frame_ingest.guard.ffmpeg_args import build_argv
 from frame_ingest.guard.paths import current_jail
 from frame_ingest.guard.subproc import run_process
@@ -41,8 +42,11 @@ async def run_ffmpeg(
     """Run ffmpeg through the guard layer: the argv is rebuilt from an allowlist (inputs and
     outputs must be inside the active job directory) and the process runs with a scrubbed
     environment, limits, a timeout and output caps. Killed on cancellation or timeout."""
-    argv = build_argv(args, loglevel=loglevel, jail=current_jail())
-    res = await run_process([ffmpeg_exe(), *argv], timeout=timeout, cwd=current_jail())
+    jail = current_jail()
+    argv = build_argv(args, loglevel=loglevel, jail=jail)
+    exe = ffmpeg_exe()
+    cmd = await sandbox.wrap([exe, *argv], jail=jail, exe_dir=Path(exe).parent)
+    res = await run_process(cmd, timeout=timeout, cwd=jail)
     return FFResult(res.returncode, res.stdout, res.stderr.decode("utf-8", errors="replace"))
 
 

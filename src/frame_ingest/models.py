@@ -127,7 +127,7 @@ class Transcript(BaseModel):
     model: str | None = None
     language: str | None = None
     timestamp_precision: Literal["segment", "chunk", "none"] = "none"
-    source: Literal["asr", "captions", "none"] = "asr"
+    source: Literal["asr", "captions", "auto-captions", "none"] = "asr"
     chunk_count: int = 0
     segments: list[Segment] = Field(default_factory=list)
 
@@ -265,6 +265,30 @@ class ProcessingNotes(BaseModel):
     failed_batches: list[FailedBatch] = Field(default_factory=list)
 
 
+class ChapterPace(BaseModel):
+    chapter_id: str
+    words_per_minute: float | None
+    speech_coverage: float | None
+
+
+class HookMetrics(BaseModel):
+    window_s: float
+    first_speech_at_s: float | None
+    words_in_window: int
+    scene_changes_in_window: int
+    on_screen_text_blocks_in_window: int
+    opening_line: str | None
+
+
+class PacingMetrics(BaseModel):
+    words_per_minute: float | None
+    speech_coverage: float | None  # fraction of the video with someone speaking
+    longest_silence_s: float | None
+    scene_changes_per_minute: float
+    chapters: list[ChapterPace] = Field(default_factory=list)
+    hook: HookMetrics
+
+
 class Analysis(BaseModel):
     """The JSON sidecar (result.json)."""
 
@@ -273,7 +297,10 @@ class Analysis(BaseModel):
     # reader; consumers must treat it as data (PLAN T1).
     trust: Literal["untrusted-content"] = "untrusted-content"
     mode: Literal["pipeline", "agent"] = "pipeline"
+    source_url: str | None = None
+    retrieved_at: datetime | None = None
     injection_flags: dict[str, int] = Field(default_factory=dict)
+    metrics: PacingMetrics | None = None  # only when requested with --metrics
     analyzed_at: datetime
     video: VideoInfo
     settings: ResolvedSettings
@@ -332,6 +359,8 @@ class Job(BaseModel):
     created_at: datetime
     updated_at: datetime
     profile: str | None = None  # provider profile the job was created under (None: any)
+    source_url: str | None = None  # display form (no query string) when fetched from a URL
+    retrieved_at: datetime | None = None
     status: JobStatus
     settings: ResolvedSettings
     video: VideoInfo | None = None

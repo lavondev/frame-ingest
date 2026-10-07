@@ -1,13 +1,17 @@
 from __future__ import annotations
 
+import json
 import subprocess
+import sys
 from collections.abc import Iterator
 from pathlib import Path
+from typing import Any
 
 import pytest
 
 from frame_ingest.config import AppConfig, load_config
 from frame_ingest.ffmpeg import ffmpeg_exe
+from tests.helpers import FAKE
 
 
 def _run(args: list[str]) -> None:
@@ -124,3 +128,42 @@ def _job_jail(tmp_path_factory: pytest.TempPathFactory) -> Iterator[None]:
 
     with job_jail(tmp_path_factory.getbasetemp()):
         yield
+
+
+@pytest.fixture(autouse=True)
+def _no_real_dns(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Tests never resolve real hostnames; URL tests inject their own resolver or patch this."""
+
+    async def refuse(host: str, port: int) -> list[str]:
+        raise OSError("DNS is disabled in tests")
+
+    monkeypatch.setattr("frame_ingest.fetch.policy.system_resolver", refuse)
+
+
+@pytest.fixture
+def fake_ytdlp(tmp_path: Path, sample_video: Path) -> Any:
+    """A fake yt-dlp executable; each test scripts its behaviour through `.set(...)`."""
+    root = tmp_path / "fake"
+    root.mkdir()
+    script = root / "fake_ytdlp.py"
+    script.write_text(FAKE)
+
+    class Fake:
+        prefix = [sys.executable, str(script)]
+        video = sample_video
+
+        def set(self, **spec: Any) -> None:
+            base = {
+                "version": "2026.07.04",
+                "files": [["abc.mp4", f"copy:{sample_video}"]],
+                "exit": 0,
+            }
+            base.update(spec)
+            (root / "fake.json").write_text(json.dumps(base))
+
+        def argv(self) -> list[str]:
+            return json.loads((root / "argv.json").read_text())
+
+    f = Fake()
+    f.set()
+    return f

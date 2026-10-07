@@ -13,18 +13,36 @@ It is built as an **Agent Skill plus a CLI**, so any coding agent that supports 
 - Local models: harnesses launched through Ollama work the same way, and a local profile can use
   Ollama for the vision and text stages.
 
-> **Status: pre-alpha.** Works on local files only. Agent mode (M4) is usable from a coding agent
-> today: no API key, you supply captions for the transcript. Pipeline mode (M5: `--profile cloud`
-> and `--profile local`) is built and tested offline but has not yet been run against real
-> providers. URLs (M3) and packaging (M6) are not built yet. Follow progress in `docs/PLAN.md`.
+> **Status: pre-alpha, feature complete, not yet field-tested.** Everything in the plan is built and
+> tested offline: local files and URLs, agent mode and the skill, pipeline mode (cloud and local),
+> security hardening and packaging. What has not happened yet is running it against the real
+> world: a real provider key, a real harness (Claude Code, Codex), a live yt-dlp download, a
+> tagged release and an external security review. See `docs/PLAN.md` for the exact list.
 
-## Try it (pre-alpha)
+## Install
+
+You need [uv](https://docs.astral.sh/uv/). Until the first release is on PyPI, install from the
+repository:
 
 ```bash
-git clone https://github.com/lavondev/frame-ingest && cd frame-ingest
-uv tool install .                 # puts `frame-ingest` on your PATH
+uv tool install git+https://github.com/lavondev/frame-ingest        # the CLI
+uv tool install "frame-ingest[url,local] @ git+https://github.com/lavondev/frame-ingest"   # + URLs, local speech
 frame-ingest doctor
 ```
+
+**The skill.** Pick the route that matches your agent; all of them use the same `skills/frame-ingest/`:
+
+| Agent | How |
+|---|---|
+| Claude Code | `/plugin marketplace add lavondev/frame-ingest`, then `/plugin install frame-ingest@frame-ingest` |
+| Codex and other `.agents/skills` readers | clone the repo (it ships `.agents/skills/frame-ingest`), or copy `skills/frame-ingest` into `~/.agents/skills/` |
+| Any skills installer | `npx skills add lavondev/frame-ingest` |
+| By hand | download `frame-ingest-<version>.skill` from a release (a zip; verify it against `SHA256SUMS`) and unzip it into your agent's skills directory |
+
+The skill's launcher uses an installed `frame-ingest`, then a repository checkout, then a pinned
+release through `uvx`; it never downloads "latest" and never pipes a script into a shell.
+
+## Try it
 
 **With a coding agent (agent mode).** Copy or symlink `skills/frame-ingest/` into your agent's
 skills directory (for Claude Code: `~/.claude/skills/frame-ingest`), then ask it to
@@ -86,4 +104,4 @@ uv run pytest && uv run ruff check . && uv run ruff format --check . && uv run m
 
 ## License
 
-To be decided before the first public release.
+MIT, see [`LICENSE`](LICENSE).

@@ -27,3 +27,4 @@ frame-ingest-out/
 .DS_Store
 .idea/
 .vscode/
+.hypothesis/

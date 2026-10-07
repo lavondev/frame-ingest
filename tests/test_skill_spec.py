@@ -14,8 +14,9 @@ import yaml
 
 SKILLS_DIR = Path(__file__).resolve().parent.parent / "skills"
 SPEC_KEYS = {"name", "description", "license", "compatibility", "metadata", "allowed-tools"}
-# Claude Code only; ignored (harmlessly) by other harnesses.
-EXTENSION_KEYS = {"argument-hint"}
+# None: the reference validator (`agentskills validate`) rejects harness extensions such as
+# Claude Code's `argument-hint`, so the skill sticks to the spec.
+EXTENSION_KEYS: set[str] = set()
 NAME_RE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
 
 
