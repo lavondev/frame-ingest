@@ -1,0 +1,36 @@
+{
+  "$defs": {
+    "CorrectedSegmentOut": {
+      "properties": {
+        "corrected_text": {
+          "title": "Corrected Text",
+          "type": "string"
+        },
+        "id": {
+          "title": "Id",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id",
+        "corrected_text"
+      ],
+      "title": "CorrectedSegmentOut",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "segments": {
+      "items": {
+        "$ref": "#/$defs/CorrectedSegmentOut"
+      },
+      "title": "Segments",
+      "type": "array"
+    }
+  },
+  "required": [
+    "segments"
+  ],
+  "title": "CorrectionOut",
+  "type": "object"
+}

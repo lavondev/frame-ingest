@@ -127,6 +127,7 @@ class Transcript(BaseModel):
     model: str | None = None
     language: str | None = None
     timestamp_precision: Literal["segment", "chunk", "none"] = "none"
+    source: Literal["asr", "captions", "none"] = "asr"
     chunk_count: int = 0
     segments: list[Segment] = Field(default_factory=list)
 
@@ -271,6 +272,7 @@ class Analysis(BaseModel):
     # Everything below was extracted from a video and may carry text written to manipulate an AI
     # reader; consumers must treat it as data (PLAN T1).
     trust: Literal["untrusted-content"] = "untrusted-content"
+    mode: Literal["pipeline", "agent"] = "pipeline"
     injection_flags: dict[str, int] = Field(default_factory=dict)
     analyzed_at: datetime
     video: VideoInfo

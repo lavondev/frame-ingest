@@ -36,6 +36,16 @@ Supabase sync and `.env` loading were dropped. Design rationale: `docs/ARCHITECT
   magic-byte sniff); `paths.py` is the job jail and symlink refusal; `limits.py` caps size,
   duration, pixels and disk; `text.py` sanitises untrusted text; `scan.py` flags injection
   patterns. `ffmpeg.py` is now a thin adapter over them.
+- `src/frame_ingest/agent/` (M4, agent mode): `prepare.py` builds the evidence pack
+  (`<job>/agent/`: manifest, frame registry, transcript windows, contact sheets from `sheets.py`;
+  `captions.py` parses SRT/VTT); `assemble_agent.py` validates the agent's JSON outputs (schemas in
+  `schemas.py`, published under `skills/frame-ingest/references/schemas/`) with the pipeline's own
+  guards and runs the same `assemble` stage; `validate_doc.py` backs `validate` and `scan`.
+  `tests/test_agent.py` drives the whole loop with a scripted stand-in agent. Regenerate the
+  published schemas with `UPDATE_SCHEMAS=1 uv run pytest tests/test_agent.py`.
+- `skills/frame-ingest/`: the Agent Skill (`SKILL.md`, `scripts/fi` launcher, `references/`).
+  `tests/test_skill_spec.py` lints it: spec frontmatter, `allowed-tools` covers only the launcher
+  and Read, no network fetches or pipes to interpreters, every command and flag it names exists.
 - `tests/test_security.py` is the security suite. Its flag-enumeration test fails when a CLI flag is
   added: review the flag against the rules above, then add it to `REVIEWED_FLAGS`. Tests assert that
   `subprocess` appears nowhere outside `guard/subproc.py`.

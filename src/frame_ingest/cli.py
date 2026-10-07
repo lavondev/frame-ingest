@@ -32,6 +32,14 @@ from typing import Any, NoReturn
 from pydantic import ValidationError
 
 from frame_ingest import __version__
+from frame_ingest.agent.assemble_agent import ValidationFailed, assemble_job
+from frame_ingest.agent.prepare import prepare as prepare_pack
+from frame_ingest.agent.validate_doc import (
+    read_document,
+    scan_document,
+    scan_job_files,
+    validate_document,
+)
 from frame_ingest.capabilities import CapabilityMemo
 from frame_ingest.config import AppConfig, ConfigError, load_config
 from frame_ingest.doctor import report_dict, run_doctor
@@ -56,7 +64,7 @@ EXIT_UNAVAILABLE = 4
 EXIT_NOT_FOUND = 5
 EXIT_INTERRUPTED = 130
 
-PLANNED_COMMANDS = ("fetch", "prepare", "assemble", "validate", "scan", "clean")
+PLANNED_COMMANDS = ("fetch", "clean")
 
 _URL_RE = re.compile(r"^[A-Za-z][A-Za-z0-9+.\-]*://")
 _ECHO_LIMIT = 200
@@ -91,7 +99,7 @@ def _echo(text: str) -> str:
     return repr(shown)
 
 
-def _resolve_input(raw: str) -> Path:
+def _resolve_input(raw: str, *, what: str = "file") -> Path:
     """A caller-supplied input must be a regular local file (never a URL, never a symlink)."""
     if raw == "-":
         raw = sys.stdin.readline().strip()
@@ -100,7 +108,7 @@ def _resolve_input(raw: str) -> Path:
     if _URL_RE.match(raw):
         raise InputRejected(
             f"{_echo(raw)} looks like a URL. URL ingest is not available yet (planned for M3); "
-            "pass a local video file."
+            f"pass a local {what}."
         )
     try:
         path = Path(raw).expanduser()
@@ -245,7 +253,96 @@ async def _cmd_run(args: argparse.Namespace, config: AppConfig) -> Result:
     return Result(payload, lines)
 
 
+async def _cmd_prepare(args: argparse.Namespace, config: AppConfig) -> Result:
+    engine = _engine(config)
+    job = await _job_for(args, engine, _settings(args))
+    captions = _resolve_input(args.captions, what="caption file") if args.captions else None
+    manifest = await prepare_pack(
+        engine, job.id, captions=captions, start=args.start, end=args.end, dense=args.dense
+    )
+    transcript = manifest["transcript"]
+    out_dir = manifest["directories"]["agent"] + "/manifest.json"
+    payload = {
+        "ok": True,
+        "job_id": job.id,
+        "manifest": out_dir,
+        "frames": len(manifest["frames"]),
+        "sheets": len(manifest["sheets"]),
+        "transcript_source": transcript["source"],
+        "transcript_segments": transcript["segments"],
+        "drill_frames_added": manifest["drill_frames_added"],
+        "output_directory": manifest["directories"]["out"],
+    }
+    lines = [
+        f"job {job.id}: {payload['frames']} frames on {payload['sheets']} contact sheet(s), "
+        f"{payload['transcript_segments']} transcript segment(s) ({payload['transcript_source']})",
+        f"manifest: {out_dir}",
+        f"write your outputs under: {payload['output_directory']}",
+    ]
+    return Result(payload, lines)
+
+
+async def _cmd_assemble(args: argparse.Namespace, config: AppConfig) -> Result:
+    engine = _engine(config)
+    try:
+        job = await assemble_job(engine, args.job)
+    except ValidationFailed as exc:
+        payload: dict[str, Any] = {
+            "ok": False,
+            "job_id": args.job,
+            "error": {"code": exc.code, "message": exc.message},
+            "problems": exc.problems,
+        }
+        lines = [f"{p['file']}: {p['message']}" for p in exc.problems]
+        return Result(payload, lines, EXIT_FAILED, error=exc.message)
+    outputs = {key: str(engine.output_path(job, key)) for key in job.outputs}
+    payload = {
+        "ok": True,
+        "job_id": job.id,
+        "status": job.status.value,
+        "chapter_count": job.chapter_count,
+        "warnings": [w.model_dump(mode="json") for w in job.warnings],
+        "outputs": outputs,
+    }
+    lines = [f"job {job.id}: {job.chapter_count} chapters, {len(job.warnings)} warnings"]
+    lines += [f"{key}: {path}" for key, path in outputs.items()]
+    return Result(payload, lines)
+
+
+async def _cmd_validate(args: argparse.Namespace, config: AppConfig) -> Result:
+    text = read_document(_resolve_input(args.document, what="document"))
+    issues = validate_document(text)
+    payload = {"ok": not issues, "issues": issues}
+    lines = [
+        f"{'line ' + str(i['line']) + ': ' if i['line'] else ''}{i['code']}: {i['message']}"
+        for i in issues
+    ] or ["document is valid"]
+    return Result(payload, lines, EXIT_FAILED if issues else EXIT_OK)
+
+
+async def _cmd_scan(args: argparse.Namespace, config: AppConfig) -> Result:
+    engine = _engine(config)
+    if engine.store.exists(args.target):
+        report = scan_job_files(engine.store.dir(args.target))
+        where = f"job {args.target}"
+    else:
+        report = scan_document(read_document(_resolve_input(args.target, what="document")))
+        where = "document"
+    payload = {
+        "ok": True,
+        "flags": report["flags"],
+        **{k: v for k, v in report.items() if k != "flags"},
+    }
+    flags = report["flags"]
+    lines = [f"{where}: " + (", ".join(f"{k} x{v}" for k, v in flags.items()) or "no flags")]
+    return Result(payload, lines)
+
+
 _HANDLERS = {
+    "prepare": _cmd_prepare,
+    "assemble": _cmd_assemble,
+    "validate": _cmd_validate,
+    "scan": _cmd_scan,
     "doctor": _cmd_doctor,
     "probe": _cmd_probe,
     "estimate": _cmd_estimate,
@@ -269,6 +366,17 @@ def _add_input(sub: argparse.ArgumentParser, *, profile: bool) -> None:
         sub.add_argument(
             "--profile", required=True, choices=PROFILES, help="provider profile (M1: fake only)"
         )
+
+
+def _add_prepare(sub: argparse.ArgumentParser) -> None:
+    sub.add_argument(
+        "--captions", metavar="FILE", help="a .srt or .vtt caption file to use as the transcript"
+    )
+    sub.add_argument(
+        "--dense", action="store_true", help="add full-resolution frames for a time range"
+    )
+    sub.add_argument("--start", type=float, help="range start in seconds (with --dense)")
+    sub.add_argument("--end", type=float, help="range end in seconds (with --dense)")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -299,6 +407,23 @@ def build_parser() -> argparse.ArgumentParser:
     run = subs.add_parser("run", help="run the full pipeline on a local file")
     _add_common(run)
     _add_input(run, profile=True)
+
+    prepare = subs.add_parser("prepare", help="agent mode: build the evidence pack to read")
+    _add_common(prepare)
+    _add_input(prepare, profile=False)
+    _add_prepare(prepare)
+
+    assemble = subs.add_parser("assemble", help="agent mode: validate outputs, write the document")
+    _add_common(assemble)
+    assemble.add_argument("job", help="job id from `prepare`")
+
+    validate = subs.add_parser("validate", help="check a finished document against the format")
+    _add_common(validate)
+    validate.add_argument("document", help="document path, or '-' to read the path from stdin")
+
+    scan = subs.add_parser("scan", help="flag prompt-injection patterns in a job or document")
+    _add_common(scan)
+    scan.add_argument("target", help="job id, or a document path ('-' reads it from stdin)")
     return parser
 
 
