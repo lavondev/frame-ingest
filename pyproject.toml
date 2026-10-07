@@ -24,6 +24,10 @@ classifiers = [
     "Typing :: Typed",
 ]
 
+[project.optional-dependencies]
+# Speech-to-text on this machine for `--profile local` (docs/PLAN.md section 3.5).
+local = ["faster-whisper>=1.0"]
+
 [project.scripts]
 frame-ingest = "frame_ingest.cli:main"
 

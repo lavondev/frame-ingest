@@ -25,6 +25,7 @@ import json
 import re
 import sys
 from collections.abc import Sequence
+from contextlib import nullcontext
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, NoReturn
@@ -40,9 +41,11 @@ from frame_ingest.agent.validate_doc import (
     scan_job_files,
     validate_document,
 )
+from frame_ingest.budget import Budget, check_estimate
 from frame_ingest.capabilities import CapabilityMemo
 from frame_ingest.config import AppConfig, ConfigError, load_config
-from frame_ingest.doctor import report_dict, run_doctor
+from frame_ingest.doctor import HealthCheck, check_local, report_dict, run_doctor
+from frame_ingest.egress import EgressDenied, build_plan, enforce
 from frame_ingest.engine import Engine, ProviderFactory
 from frame_ingest.errors import (
     FatalProviderError,
@@ -52,9 +55,10 @@ from frame_ingest.errors import (
     install_log_redaction,
     redact,
 )
+from frame_ingest.guard.netblock import OfflineViolation, block_network
 from frame_ingest.guard.paths import PathRejected
 from frame_ingest.models import EventType, Job, JobSettings, JobStatus
-from frame_ingest.profiles import PROFILES, ProfileUnavailable, egress_summary, provider_factory
+from frame_ingest.profiles import PROFILES, ProfileUnavailable, profile_config, resolve_profile
 
 EXIT_OK = 0
 EXIT_FAILED = 1
@@ -88,7 +92,9 @@ def _exit_code_for(exc: FrameIngestError) -> int:
         return EXIT_INPUT
     if isinstance(exc, JobNotFound):
         return EXIT_NOT_FOUND
-    if isinstance(exc, ProfileUnavailable | ConfigError | FatalProviderError):
+    if isinstance(
+        exc, ProfileUnavailable | ConfigError | FatalProviderError | EgressDenied | OfflineViolation
+    ):
         return EXIT_UNAVAILABLE
     return EXIT_FAILED
 
@@ -150,12 +156,18 @@ def _progress(event: EventType, data: dict[str, Any]) -> None:
 # ── commands ────────────────────────────────────────────────────────────────────
 async def _cmd_doctor(args: argparse.Namespace, config: AppConfig) -> Result:
     memo = CapabilityMemo(config.data_root / "capabilities.json")
-    report = await run_doctor(config, memo, online=args.online)
+    online = args.online or args.deep  # --deep spends a fraction of a cent: it is its own consent
+    providers = resolve_profile("cloud", config).factory() if args.deep else None
+    report = await run_doctor(config, memo, online=online, deep=args.deep, providers=providers)
+    if args.profile == "local":
+        extra: list[HealthCheck] = await check_local(config)
+        report.checks += extra
+        report.ok = report.ok and all(c.ok for c in extra)
     lines = [f"{'ok  ' if c.ok else 'FAIL'} {c.name}: {c.message}" for c in report.checks]
     lines += [f"warn {w}" for w in report.warnings]
     if report.ffmpeg:
         lines.append(f"     {report.ffmpeg['version']}")
-    payload = {"ok": report.ok, "online": args.online, "report": report_dict(report)}
+    payload = {"ok": report.ok, "online": online, "report": report_dict(report)}
     return Result(payload, lines, EXIT_OK if report.ok else EXIT_FAILED)
 
 
@@ -181,17 +193,25 @@ async def _cmd_probe(args: argparse.Namespace, config: AppConfig) -> Result:
     return Result({"ok": True, "video": info}, lines)
 
 
-async def _job_for(args: argparse.Namespace, engine: Engine, settings: JobSettings | None) -> Job:
+async def _job_for(
+    args: argparse.Namespace,
+    engine: Engine,
+    settings: JobSettings | None,
+    profile: str | None = None,
+) -> Job:
     """The job to act on: an existing one (`--job`) or a new one made from `input`."""
     if args.job:
         if args.input is not None:
             raise _usage("Give either an input or --job, not both.")
         if settings is not None:
             raise _usage("--frame-cap and --language apply only when creating a job.")
-        return engine.load(args.job)
+        job = engine.load(args.job)
+        if profile and job.profile not in (None, profile):
+            raise _usage(f"Job {job.id} was created with profile '{job.profile}', not '{profile}'.")
+        return job
     if args.input is None:
         raise _usage("Give an input file or --job <id>.")
-    return await engine.create(_resolve_input(args.input), settings)
+    return await engine.create(_resolve_input(args.input), settings, profile=profile)
 
 
 class _Usage(Exception):
@@ -202,34 +222,70 @@ def _usage(message: str) -> _Usage:
     return _Usage(message)
 
 
+def _plan_payload(plan: Any) -> dict[str, Any]:
+    data: dict[str, Any] = plan.model_dump(mode="json")
+    data["network"] = plan.leaves_machine
+    data["note"] = plan.render()
+    return data
+
+
 async def _cmd_estimate(args: argparse.Namespace, config: AppConfig) -> Result:
-    engine = _engine(config)
-    settings = _settings(args)
-    job = await _job_for(args, engine, settings)
+    cfg = profile_config(args.profile, config)  # no keys or providers: nothing is contacted
+    engine = _engine(cfg)
+    job = await _job_for(args, engine, _settings(args), args.profile)
     est = await engine.estimate(job.id)
-    egress = egress_summary(args.profile)
+    if args.profile == "local":
+        est = est.model_copy(update={"cost_usd": 0.0, "cost_note": "Local models cost nothing."})
+    plan = build_plan(args.profile, cfg, est, job.settings)
     payload = {
         "ok": True,
         "job_id": job.id,
         "profile": args.profile,
         "estimate": est.model_dump(mode="json"),
-        "egress": egress,
+        "egress": _plan_payload(plan),
     }
     cost = f"~${est.cost_usd:.2f}" if est.cost_usd is not None else "unknown"
     lines = [
         f"job {job.id}: {est.duration_s:.1f}s of video, {est.frames} frames",
         f"{est.total_api_calls} API calls, {est.total_input_tokens} input / "
         f"{est.total_output_tokens} output tokens, cost {cost}",
-        f"egress: {egress['note']}",
+        plan.render(),
     ]
     return Result(payload, lines)
 
 
+def _ask(prompt: str) -> bool:
+    print(prompt, end="", file=sys.stderr, flush=True)
+    return sys.stdin.readline().strip().lower() in {"y", "yes"}
+
+
 async def _cmd_run(args: argparse.Namespace, config: AppConfig) -> Result:
-    factory = provider_factory(args.profile)  # fails fast, before any input is copied
-    engine = _engine(config, factory)
-    job = await _job_for(args, engine, _settings(args))
-    job = await engine.run(job.id, on_event=_progress)
+    resolved = resolve_profile(args.profile, config, offline=args.offline)  # before any copying
+    engine = _engine(resolved.config, resolved.factory)
+    job = await _job_for(args, engine, _settings(args), args.profile)
+
+    # What would leave the machine, shown before anything is spent or sent (PLAN T8, T10).
+    est = await engine.estimate(job.id)
+    if resolved.free:
+        est = est.model_copy(update={"cost_usd": 0.0, "cost_note": "No per-call cost."})
+    plan = build_plan(args.profile, resolved.config, est, job.settings)
+    if plan.items:
+        print(plan.render(), file=sys.stderr)
+    enforce(
+        plan,
+        mode=config.egress,
+        allow_flag=args.allow_egress,
+        offline=args.offline,
+        interactive=sys.stdin.isatty() and sys.stderr.isatty(),
+        ask=_ask,
+    )
+    budget: Budget | None = None
+    if args.max_cost is not None:
+        check_estimate(est, args.max_cost, free=resolved.free)
+        budget = Budget(args.max_cost, engine.pricing, free=resolved.free)
+
+    with block_network() if args.offline else nullcontext():
+        job = await engine.run(job.id, on_event=_progress, budget=budget)
     job_dir = str(engine.store.dir(job.id))
     payload: dict[str, Any] = {
         "ok": job.status == JobStatus.COMPLETED,
@@ -238,6 +294,8 @@ async def _cmd_run(args: argparse.Namespace, config: AppConfig) -> Result:
         "profile": args.profile,
         "job_dir": job_dir,
         "chapter_count": job.chapter_count,
+        "egress": _plan_payload(plan),
+        "spent_usd": round(budget.spent, 4) if budget else None,
         "warnings": [w.model_dump(mode="json") for w in job.warnings],
     }
     if job.status != JobStatus.COMPLETED:
@@ -364,7 +422,10 @@ def _add_input(sub: argparse.ArgumentParser, *, profile: bool) -> None:
     sub.add_argument("--language", help="spoken language hint, e.g. 'en'")
     if profile:
         sub.add_argument(
-            "--profile", required=True, choices=PROFILES, help="provider profile (M1: fake only)"
+            "--profile",
+            required=True,
+            choices=PROFILES,
+            help="provider profile (fake, cloud, local)",
         )
 
 
@@ -395,6 +456,14 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="also contact the configured API to verify the key and models (sends the key there)",
     )
+    doctor.add_argument(
+        "--deep",
+        action="store_true",
+        help="implies --online; also runs two tiny paid probes to learn what the models support",
+    )
+    doctor.add_argument(
+        "--profile", choices=("local",), help="also check readiness of the local profile"
+    )
 
     probe = subs.add_parser("probe", help="duration, resolution, fps and audio of a local file")
     _add_common(probe)
@@ -407,6 +476,17 @@ def build_parser() -> argparse.ArgumentParser:
     run = subs.add_parser("run", help="run the full pipeline on a local file")
     _add_common(run)
     _add_input(run, profile=True)
+    run.add_argument(
+        "--allow-egress",
+        action="store_true",
+        help="consent to send data to the cloud destinations shown (only after the user agrees)",
+    )
+    run.add_argument(
+        "--offline", action="store_true", help="forbid all non-loopback network use for this run"
+    )
+    run.add_argument(
+        "--max-cost", type=float, metavar="USD", help="refuse or stop above this dollar amount"
+    )
 
     prepare = subs.add_parser("prepare", help="agent mode: build the evidence pack to read")
     _add_common(prepare)

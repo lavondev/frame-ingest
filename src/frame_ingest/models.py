@@ -331,6 +331,7 @@ class Job(BaseModel):
     id: str
     created_at: datetime
     updated_at: datetime
+    profile: str | None = None  # provider profile the job was created under (None: any)
     status: JobStatus
     settings: ResolvedSettings
     video: VideoInfo | None = None

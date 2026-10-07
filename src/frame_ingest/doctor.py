@@ -265,5 +265,62 @@ async def run_doctor(
     return health
 
 
+async def check_local(config: AppConfig) -> list[HealthCheck]:
+    """Readiness of the `local` profile. Only ever talks to loopback."""
+    from urllib.parse import urlsplit
+
+    from frame_ingest.guard.netblock import is_loopback
+    from frame_ingest.providers.faster_whisper import INSTALL_HINT, is_available
+
+    loc = config.local
+    checks = [
+        HealthCheck(
+            name="faster-whisper",
+            ok=is_available(),
+            message="installed." if is_available() else f"not installed. {INSTALL_HINT}",
+        )
+    ]
+    if not is_loopback(urlsplit(loc.base_url).hostname):
+        checks.append(
+            HealthCheck(
+                name="local server",
+                ok=False,
+                message="local.base_url must point at this machine (127.0.0.1, ::1, localhost).",
+            )
+        )
+        return checks
+    try:
+        client = openai.AsyncOpenAI(
+            api_key="local", base_url=loc.base_url, max_retries=0, timeout=5
+        )
+        listed = await asyncio.wait_for(client.models.list(), timeout=8)
+        have = {m.id for m in listed.data}
+    except (openai.OpenAIError, TimeoutError) as exc:
+        checks.append(
+            HealthCheck(
+                name="local server",
+                ok=False,
+                message=f"Could not reach {display_url(loc.base_url)} ({type(exc).__name__}). "
+                "Start your local server, for example: ollama serve",
+            )
+        )
+        return checks
+    checks.append(
+        HealthCheck(name="local server", ok=True, message=f"{display_url(loc.base_url)} responds.")
+    )
+    for role, name in (("vision", loc.vision_model), ("text", loc.text_model)):
+        ok = name in have or f"{name}:latest" in have
+        checks.append(
+            HealthCheck(
+                name=f"local {role} model",
+                ok=ok,
+                message=f"'{name}' is available."
+                if ok
+                else f"'{name}' is not installed. Run: ollama pull {name}",
+            )
+        )
+    return checks
+
+
 def report_dict(report: DoctorReport) -> dict[str, Any]:
     return report.model_dump(mode="json")

@@ -10,6 +10,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from frame_ingest.budget import Budget
 from frame_ingest.config import AppConfig
 from frame_ingest.models import (
     EventType,
@@ -46,6 +47,7 @@ class PipelineContext:
     video: VideoInfo
     video_path: Path
     providers: ProviderBundle
+    budget: Budget | None = None
     emit_cb: Callable[[EventType, dict[str, Any]], None] = _noop
     progress_cb: Callable[[StageName, int, int, str | None], None] = _noop
     cache: StageCache = field(init=False)
@@ -114,6 +116,8 @@ class PipelineContext:
         u.input_tokens += delta.input_tokens
         u.output_tokens += delta.output_tokens
         u.audio_seconds += delta.audio_seconds
+        if self.budget is not None:  # after recording, so a stopped run still reports its spend
+            self.budget.charge(self.current_stage, model, delta)
 
     def drain(self) -> tuple[list[ProcessingWarning], list[FailedBatch], list[TokenUsage]]:
         out = (list(self._warnings), list(self._failed), list(self._usage.values()))
