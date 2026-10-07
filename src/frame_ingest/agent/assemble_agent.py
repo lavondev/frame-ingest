@@ -264,7 +264,7 @@ def _check_synthesis(
     return SynthesisResult(chapters=chapters, synthesis=synthesis, warnings=warnings)
 
 
-async def assemble_job(engine: Engine, job_id: str) -> Job:
+async def assemble_job(engine: Engine, job_id: str, *, metrics: bool = False) -> Job:
     """Validate the agent outputs of a job and write the document. Raises ValidationFailed."""
     job = engine.load(job_id)
     job_dir = engine.store.dir(job.id)
@@ -294,6 +294,7 @@ async def assemble_job(engine: Engine, job_id: str) -> Job:
         providers=fake_bundle(),
         source_url=job.source_url,
         retrieved_at=job.retrieved_at,
+        metrics=metrics,
     )
     problems: list[dict[str, str]] = []
     with job_jail(job_dir):

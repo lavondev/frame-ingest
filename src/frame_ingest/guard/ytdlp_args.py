@@ -93,6 +93,41 @@ def build_ytdlp_argv(
     return argv
 
 
+MAX_PLAYLIST_ITEMS = 25
+
+
+def build_ytdlp_list_argv(
+    prefix: Sequence[str],
+    url: str,
+    *,
+    max_items: int,
+    socket_timeout: int = 30,
+    proxy: str | None = None,
+) -> list[str]:
+    """List a playlist's entries without downloading anything (metadata only, capped)."""
+    if not url.startswith(("http://", "https://")) or "\x00" in url:
+        raise YtdlpArgsRejected("yt-dlp is only given validated http(s) URLs.")
+    if not (1 <= max_items <= MAX_PLAYLIST_ITEMS) or not (1 <= socket_timeout <= 120):
+        raise YtdlpArgsRejected(f"A playlist is limited to {MAX_PLAYLIST_ITEMS} items.")
+    argv = [
+        *prefix,
+        "--ignore-config",
+        "--no-plugin-dirs",
+        "--no-cache-dir",
+        "--flat-playlist",
+        "--dump-single-json",
+        "--playlist-end",
+        str(max_items),
+        "--quiet",
+        "--no-warnings",
+        "--socket-timeout",
+        str(socket_timeout),
+    ]
+    if proxy:
+        argv += ["--proxy", proxy]
+    return [*argv, "--", url]
+
+
 def assert_safe(argv: Sequence[str]) -> None:
     """Defence in depth for tests and callers: nothing forbidden may appear before `--`."""
     head = list(argv)[: list(argv).index("--")] if "--" in argv else list(argv)

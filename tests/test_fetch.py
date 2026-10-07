@@ -419,6 +419,12 @@ spec = json.loads((here / "fake.json").read_text())
 args = sys.argv[1:]
 if "--version" in args:
     print(spec["version"]); sys.exit(0)
+if "--dump-single-json" in args:
+    Path(here / "argv.json").write_text(json.dumps(args))
+    if spec.get("list_exit", 0):
+        sys.stderr.write("ERROR: cannot list\\n"); sys.exit(spec["list_exit"])
+    sys.stdout.write(spec["listing"] if isinstance(spec["listing"], str) else json.dumps(spec["listing"]))
+    sys.exit(0)
 if spec.get("exit", 0) not in (0, 101):
     sys.stderr.write("ERROR: fake failure KEYSET=%s\\n" % ("1" if "OPENAI_API_KEY" in os.environ else "0"))
     sys.exit(spec["exit"])

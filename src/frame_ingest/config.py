@@ -84,6 +84,9 @@ class AppConfig(BaseModel):
     base_urls: BaseUrls = Field(default_factory=BaseUrls)
     local: LocalProfile = Field(default_factory=LocalProfile)
 
+    # where `export` may write (PLAN T6): only locations the user lists here, never an argument
+    export_roots: list[Path] = Field(default_factory=list)
+
     # egress policy (PLAN T8): `ask` prompts on a terminal and denies otherwise
     egress: Literal["deny", "ask", "allow"] = "ask"
 
@@ -196,6 +199,7 @@ def _scalar_fields() -> list[str]:
         "models",
         "base_urls",
         "local",
+        "export_roots",
         "image_tokens",
         "api_key",
         "role_api_keys",
@@ -236,6 +240,9 @@ def _env_overlay(env: Mapping[str, str]) -> dict[str, Any]:
             urls[role] = val
     if urls:
         over["base_urls"] = urls
+    roots = env.get(f"{ENV_PREFIX}EXPORT_ROOTS")
+    if roots:
+        over["export_roots"] = [r for r in roots.split(os.pathsep) if r]
     local: dict[str, str] = {}
     for name in LocalProfile.model_fields:
         val = env.get(f"{ENV_PREFIX}LOCAL_{name.upper()}")

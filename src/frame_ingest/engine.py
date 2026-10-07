@@ -245,6 +245,7 @@ class Engine:
         force: set[StageName] | None = None,
         on_event: EventCallback | None = None,
         budget: Budget | None = None,
+        metrics: bool = False,
     ) -> Job:
         """Run (or resume) a job to completion. Returns the job with its final status.
 
@@ -272,6 +273,7 @@ class Engine:
             budget=budget,
             source_url=job.source_url,
             retrieved_at=job.retrieved_at,
+            metrics=metrics,
             emit_cb=emit,
         )
         hooks = _Hooks(self, job, ctx, emit)

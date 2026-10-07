@@ -73,6 +73,8 @@ ignore = ["RUF001", "RUF002", "RUF003", "RUF012"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["S101", "S603", "S607", "E501", "SIM117", "B017", "RUF007"]
+# fixtures imported from test_fetch are intentionally re-declared as test parameters
+"tests/test_extras.py" = ["F811"]
 
 [tool.mypy]
 python_version = "3.11"

@@ -5,6 +5,7 @@ before anything is adopted. Optional extra: `uv tool install ".[url]"`."""
 from __future__ import annotations
 
 import importlib.util
+import json
 import re
 import secrets
 import shutil
@@ -16,7 +17,12 @@ from frame_ingest.errors import FrameIngestError
 from frame_ingest.fetch.policy import Resolver, validate_url
 from frame_ingest.guard.paths import is_within
 from frame_ingest.guard.subproc import Limits, run_process
-from frame_ingest.guard.ytdlp_args import Subs, assert_safe, build_ytdlp_argv
+from frame_ingest.guard.ytdlp_args import (
+    Subs,
+    assert_safe,
+    build_ytdlp_argv,
+    build_ytdlp_list_argv,
+)
 
 # Raise as advisories land (CVE-2026-50023, CVE-2026-55404).
 YTDLP_FLOOR = (2026, 7, 4)
@@ -181,3 +187,49 @@ async def download_with_ytdlp(
     except BaseException:
         shutil.rmtree(work, ignore_errors=True)
         raise
+
+
+async def list_playlist(
+    url: str,
+    *,
+    max_items: int,
+    prefix: list[str] | None = None,
+    resolver: Resolver | None = None,
+    proxy: str | None = None,
+) -> tuple[list[str], int]:
+    """URLs of up to `max_items` playlist entries, and how many entries were refused.
+
+    Every entry URL is re-validated by the URL policy before it is returned; the list itself comes
+    from untrusted metadata, so it is size-capped and only plain http(s) strings are kept."""
+    from frame_ingest.fetch.policy import UrlRejected
+
+    validated = await validate_url(url, resolver=resolver)
+    cmd = prefix or default_prefix()
+    await check_version(cmd)
+    argv = build_ytdlp_list_argv(cmd, validated.url, max_items=max_items, proxy=proxy)
+    assert_safe(argv)
+    res = await run_process(argv, timeout=300, limits=Limits(max_stdout=2 << 20))
+    if res.returncode != 0:
+        tail = res.stderr.decode("utf-8", "replace").strip().splitlines()[-1:] or [""]
+        raise YtdlpError(f"yt-dlp could not list this URL: {tail[0][:200]}")
+    try:
+        data = json.loads(res.stdout.decode("utf-8", "replace"))
+    except ValueError:
+        raise YtdlpError("yt-dlp returned a listing that could not be read.") from None
+    entries = data.get("entries") if isinstance(data, dict) else None
+    candidates = (
+        [e.get("url") or e.get("webpage_url") for e in entries if isinstance(e, dict)]
+        if isinstance(entries, list)
+        else [validated.url]  # not a playlist: the single video itself
+    )
+    urls: list[str] = []
+    refused = 0
+    for cand in candidates[:max_items]:
+        if not isinstance(cand, str) or len(cand) > 2048:
+            refused += 1
+            continue
+        try:
+            urls.append((await validate_url(cand, resolver=resolver)).url)
+        except UrlRejected:
+            refused += 1
+    return urls, refused

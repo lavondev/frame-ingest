@@ -265,6 +265,30 @@ class ProcessingNotes(BaseModel):
     failed_batches: list[FailedBatch] = Field(default_factory=list)
 
 
+class ChapterPace(BaseModel):
+    chapter_id: str
+    words_per_minute: float | None
+    speech_coverage: float | None
+
+
+class HookMetrics(BaseModel):
+    window_s: float
+    first_speech_at_s: float | None
+    words_in_window: int
+    scene_changes_in_window: int
+    on_screen_text_blocks_in_window: int
+    opening_line: str | None
+
+
+class PacingMetrics(BaseModel):
+    words_per_minute: float | None
+    speech_coverage: float | None  # fraction of the video with someone speaking
+    longest_silence_s: float | None
+    scene_changes_per_minute: float
+    chapters: list[ChapterPace] = Field(default_factory=list)
+    hook: HookMetrics
+
+
 class Analysis(BaseModel):
     """The JSON sidecar (result.json)."""
 
@@ -276,6 +300,7 @@ class Analysis(BaseModel):
     source_url: str | None = None
     retrieved_at: datetime | None = None
     injection_flags: dict[str, int] = Field(default_factory=dict)
+    metrics: PacingMetrics | None = None  # only when requested with --metrics
     analyzed_at: datetime
     video: VideoInfo
     settings: ResolvedSettings

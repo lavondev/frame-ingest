@@ -56,11 +56,13 @@ from frame_ingest.errors import (
     install_log_redaction,
     redact,
 )
+from frame_ingest.export import ExportRefused, export_document
 from frame_ingest.fetch.acquire import attach_captions, fetch_url
 from frame_ingest.fetch.policy import UrlRejected
-from frame_ingest.fetch.ytdlp import YtdlpTooOld, YtdlpUnavailable
+from frame_ingest.fetch.ytdlp import YtdlpTooOld, YtdlpUnavailable, list_playlist
 from frame_ingest.guard.netblock import OfflineViolation, block_network
 from frame_ingest.guard.paths import PathRejected
+from frame_ingest.guard.ytdlp_args import MAX_PLAYLIST_ITEMS
 from frame_ingest.models import EventType, Job, JobSettings, JobStatus
 from frame_ingest.profiles import PROFILES, ProfileUnavailable, profile_config, resolve_profile
 
@@ -104,7 +106,8 @@ def _exit_code_for(exc: FrameIngestError) -> int:
         | EgressDenied
         | OfflineViolation
         | YtdlpUnavailable
-        | YtdlpTooOld,
+        | YtdlpTooOld
+        | ExportRefused,
     ):
         return EXIT_UNAVAILABLE
     return EXIT_FAILED
@@ -141,9 +144,12 @@ def _resolve_input(raw: str, *, what: str = "file") -> Path:
 def _settings(args: argparse.Namespace) -> JobSettings | None:
     frame_cap = getattr(args, "frame_cap", None)
     language = getattr(args, "language", None)
-    if frame_cap is None and language is None:
+    diarize = bool(getattr(args, "diarize", False))
+    if getattr(args, "profile", None) == "local" and diarize:
+        raise _usage("--diarize needs a provider that supports speaker labels (--profile cloud).")
+    if frame_cap is None and language is None and not diarize:
         return None
-    return JobSettings(frame_cap=frame_cap, language=language)
+    return JobSettings(frame_cap=frame_cap, language=language, diarize=diarize or None)
 
 
 def _no_providers() -> NoReturn:
@@ -216,7 +222,7 @@ async def _job_for(
         if args.input is not None:
             raise _usage("Give either an input or --job, not both.")
         if settings is not None:
-            raise _usage("--frame-cap and --language apply only when creating a job.")
+            raise _usage("--frame-cap, --language and --diarize apply only when creating a job.")
         job = engine.load(args.job)
         if profile and job.profile not in (None, profile):
             raise _usage(f"Job {job.id} was created with profile '{job.profile}', not '{profile}'.")
@@ -329,7 +335,7 @@ async def _cmd_run(args: argparse.Namespace, config: AppConfig) -> Result:
         budget = Budget(args.max_cost, engine.pricing, free=resolved.free)
 
     with block_network() if args.offline else nullcontext():
-        job = await engine.run(job.id, on_event=_progress, budget=budget)
+        job = await engine.run(job.id, on_event=_progress, budget=budget, metrics=args.metrics)
     job_dir = str(engine.store.dir(job.id))
     payload: dict[str, Any] = {
         "ok": job.status == JobStatus.COMPLETED,
@@ -355,7 +361,34 @@ async def _cmd_run(args: argparse.Namespace, config: AppConfig) -> Result:
     return Result(payload, lines)
 
 
+async def _fetch_playlist(args: argparse.Namespace, config: AppConfig) -> Result:
+    if not 1 <= args.max_items <= MAX_PLAYLIST_ITEMS:
+        raise _usage(f"--max-items must be between 1 and {MAX_PLAYLIST_ITEMS}.")
+    url = _stdin_or(args.input)
+    if not _URL_RE.match(url):
+        raise _usage("--allow-playlist needs a URL.")
+    engine = _engine(config)
+    urls, refused = await list_playlist(url, max_items=args.max_items)
+    jobs: list[dict[str, Any]] = []
+    for item in urls:  # each item is validated and downloaded on its own, one video at a time
+        try:
+            job = await _create_from(item, engine, None, None, False)
+            jobs.append({"url": item.split("?", 1)[0], "job_id": job.id})
+        except FrameIngestError as exc:
+            jobs.append({"url": item.split("?", 1)[0], "error": exc.message})
+    payload = {
+        "ok": any("job_id" in j for j in jobs),
+        "refused_entries": refused,
+        "items": jobs,
+    }
+    lines = [f"{j.get('job_id') or 'failed'}: {j['url']}" for j in jobs]
+    lines.append(f"{len(jobs)} item(s) tried, {refused} entr(ies) refused")
+    return Result(payload, lines, EXIT_OK if payload["ok"] else EXIT_FAILED)
+
+
 async def _cmd_fetch(args: argparse.Namespace, config: AppConfig) -> Result:
+    if args.allow_playlist:
+        return await _fetch_playlist(args, config)
     engine = _engine(config)
     job = await _create_from(args.input, engine, None, None, False)
     video = job.video
@@ -414,7 +447,7 @@ async def _cmd_prepare(args: argparse.Namespace, config: AppConfig) -> Result:
 async def _cmd_assemble(args: argparse.Namespace, config: AppConfig) -> Result:
     engine = _engine(config)
     try:
-        job = await assemble_job(engine, args.job)
+        job = await assemble_job(engine, args.job, metrics=args.metrics)
     except ValidationFailed as exc:
         payload: dict[str, Any] = {
             "ok": False,
@@ -436,6 +469,21 @@ async def _cmd_assemble(args: argparse.Namespace, config: AppConfig) -> Result:
     lines = [f"job {job.id}: {job.chapter_count} chapters, {len(job.warnings)} warnings"]
     lines += [f"{key}: {path}" for key, path in outputs.items()]
     return Result(payload, lines)
+
+
+async def _cmd_export(args: argparse.Namespace, config: AppConfig) -> Result:
+    engine = _engine(config)
+    job = engine.load(args.job)
+    md = engine.output_path(job, "md")
+    side = engine.output_path(job, "json")
+    written = export_document(config, md, side, args.to, args.style)
+    payload = {
+        "ok": True,
+        "job_id": job.id,
+        "style": args.style,
+        "written": [str(p) for p in written],
+    }
+    return Result(payload, [f"wrote {p}" for p in written])
 
 
 async def _cmd_validate(args: argparse.Namespace, config: AppConfig) -> Result:
@@ -468,6 +516,7 @@ async def _cmd_scan(args: argparse.Namespace, config: AppConfig) -> Result:
 
 
 _HANDLERS = {
+    "export": _cmd_export,
     "fetch": _cmd_fetch,
     "prepare": _cmd_prepare,
     "assemble": _cmd_assemble,
@@ -493,6 +542,11 @@ def _add_input(sub: argparse.ArgumentParser, *, profile: bool) -> None:
     sub.add_argument("--frame-cap", type=int, help="maximum number of frames to analyse")
     sub.add_argument("--language", help="spoken language hint, e.g. 'en'")
     if profile:
+        sub.add_argument(
+            "--diarize",
+            action="store_true",
+            help="label speakers (needs a provider that supports it)",
+        )
         sub.add_argument(
             "--profile",
             required=True,
@@ -542,6 +596,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _add_common(fetch)
     fetch.add_argument("input", help="http(s) URL or local file, or '-' to read it from stdin")
+    fetch.add_argument(
+        "--allow-playlist",
+        action="store_true",
+        help=f"fetch up to --max-items videos of a playlist (at most {MAX_PLAYLIST_ITEMS})",
+    )
+    fetch.add_argument("--max-items", type=int, default=10, help="playlist item cap (default 10)")
     fetch.set_defaults(job=None)
 
     probe = subs.add_parser("probe", help="duration, resolution, fps and audio of a local file")
@@ -557,6 +617,9 @@ def build_parser() -> argparse.ArgumentParser:
     run = subs.add_parser("run", help="run the full pipeline on a local file")
     _add_common(run)
     _add_input(run, profile=True)
+    run.add_argument(
+        "--metrics", action="store_true", help="add pacing and hook metrics (deterministic)"
+    )
     run.add_argument(
         "--allow-egress",
         action="store_true",
@@ -577,6 +640,17 @@ def build_parser() -> argparse.ArgumentParser:
     assemble = subs.add_parser("assemble", help="agent mode: validate outputs, write the document")
     _add_common(assemble)
     assemble.add_argument("job", help="job id from `prepare`")
+    assemble.add_argument(
+        "--metrics", action="store_true", help="add pacing and hook metrics (deterministic)"
+    )
+
+    export = subs.add_parser(
+        "export", help="copy a finished document into a folder you listed in config"
+    )
+    _add_common(export)
+    export.add_argument("job", help="job id of a finished job")
+    export.add_argument("--to", required=True, help="folder inside a configured export root")
+    export.add_argument("--style", choices=("markdown", "obsidian"), default="markdown")
 
     validate = subs.add_parser("validate", help="check a finished document against the format")
     _add_common(validate)

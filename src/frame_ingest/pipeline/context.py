@@ -50,6 +50,7 @@ class PipelineContext:
     budget: Budget | None = None
     source_url: str | None = None
     retrieved_at: datetime | None = None
+    metrics: bool = False
     emit_cb: Callable[[EventType, dict[str, Any]], None] = _noop
     progress_cb: Callable[[StageName, int, int, str | None], None] = _noop
     cache: StageCache = field(init=False)
