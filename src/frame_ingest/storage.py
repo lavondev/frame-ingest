@@ -18,6 +18,7 @@ from typing import Any
 from pydantic import BaseModel
 
 from frame_ingest.errors import JobNotFound
+from frame_ingest.guard.paths import PathRejected, current_jail, require_inside
 from frame_ingest.models import Job
 
 JOB_ID_RE = re.compile(r"^[0-9a-f]{12}$")
@@ -27,7 +28,7 @@ _SAFE_CHARS = re.compile(r"[^A-Za-z0-9._ \-()+]")
 def safe_filename(name: str) -> str:
     """Strip any path and unsafe characters from a client-supplied filename."""
     base = Path(name.replace("\\", "/")).name
-    base = _SAFE_CHARS.sub("_", base).strip(" .") or "video"
+    base = _SAFE_CHARS.sub("_", base).strip(" .").lstrip("-") or "video"
     if len(base) > 120:
         stem, dot, ext = base.rpartition(".")
         base = (stem[: 115 - len(ext)] + dot + ext) if dot else base[:120]
@@ -41,6 +42,11 @@ def file_stem(name: str) -> str:
 
 def atomic_write_text(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
+    jail = current_jail()
+    if jail is not None:
+        require_inside(path.parent, jail, what="write target")
+    if path.is_symlink():
+        raise PathRejected("Refusing to overwrite a symlink.")
     fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=path.name + ".", suffix=".tmp")
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as fh:

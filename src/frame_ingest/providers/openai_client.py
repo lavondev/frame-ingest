@@ -35,6 +35,7 @@ from frame_ingest.errors import (
     ValidationFailure,
     redact,
 )
+from frame_ingest.guard.paths import read_bytes_nofollow
 from frame_ingest.llm_schemas import VisionBatchOut
 from frame_ingest.models import StageName
 from frame_ingest.providers.base import (
@@ -294,7 +295,7 @@ class OpenAIText:
 
 
 def _image_part(path: Path, detail: str) -> dict[str, Any]:
-    b64 = base64.b64encode(path.read_bytes()).decode("ascii")
+    b64 = base64.b64encode(read_bytes_nofollow(path)).decode("ascii")
     return {
         "type": "image_url",
         "image_url": {"url": f"data:image/jpeg;base64,{b64}", "detail": detail},
@@ -348,7 +349,7 @@ class OpenAITranscriber:
     ) -> RawTranscription:
         caps = self.caps_for(model)
         mime = "audio/mpeg" if audio.suffix == ".mp3" else "audio/ogg"
-        data = audio.read_bytes()
+        data = read_bytes_nofollow(audio)
         kwargs: dict[str, Any] = {"model": model, "file": (audio.name, data, mime)}
         if language:
             kwargs["language"] = language

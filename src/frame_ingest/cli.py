@@ -44,6 +44,7 @@ from frame_ingest.errors import (
     install_log_redaction,
     redact,
 )
+from frame_ingest.guard.paths import PathRejected
 from frame_ingest.models import EventType, Job, JobSettings, JobStatus
 from frame_ingest.profiles import PROFILES, ProfileUnavailable, egress_summary, provider_factory
 
@@ -75,7 +76,7 @@ class Result:
 
 
 def _exit_code_for(exc: FrameIngestError) -> int:
-    if isinstance(exc, InputRejected | MediaError):
+    if isinstance(exc, InputRejected | MediaError | PathRejected):
         return EXIT_INPUT
     if isinstance(exc, JobNotFound):
         return EXIT_NOT_FOUND
@@ -101,10 +102,14 @@ def _resolve_input(raw: str) -> Path:
             f"{_echo(raw)} looks like a URL. URL ingest is not available yet (planned for M3); "
             "pass a local video file."
         )
-    path = Path(raw).expanduser()
-    if path.is_symlink():
-        raise InputRejected(f"Refusing to follow a symlink: {_echo(raw)}.")
-    if not path.is_file():
+    try:
+        path = Path(raw).expanduser()
+        if path.is_symlink():
+            raise InputRejected(f"Refusing to follow a symlink: {_echo(raw)}.")
+        is_file = path.is_file()
+    except (OSError, ValueError, RuntimeError):  # name too long, NUL byte, unknown ~user
+        raise InputRejected(f"Not a usable file path: {_echo(raw)}.") from None
+    if not is_file:
         raise InputRejected(f"Not a regular file: {_echo(raw)}.")
     return path
 

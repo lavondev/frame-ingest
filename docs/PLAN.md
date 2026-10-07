@@ -1,6 +1,6 @@
 # frame-ingest — plan and architecture
 
-Status: draft v1, 2026-10-06. Written for hand-off to Claude Code. Repo scaffold is in place and milestones M0 (pipeline ported from faircopy) and M1 (CLI skeleton) are done; next is M2 (security core). The section 10 decisions other than the repo are still open.
+Status: draft v1, 2026-10-06. Written for hand-off to Claude Code. Repo scaffold is in place and milestones M0 (pipeline ported from faircopy) M1 (CLI skeleton) and M2 (security core) are done; next is M3 (URL ingest) or, per section 10 item 4, M4 (agent mode and the skill). The section 10 decisions other than the repo are still open.
 Source project: `faircopy` (lavondev/faircopy). Target: an open-source Agent Skill, `/frame-ingest <video file | URL>`, that works across coding-agent harnesses.
 
 ---
@@ -262,7 +262,7 @@ argument-hint: <video file or URL>
 
 **M1. CLI skeleton.** *(Done 2026-10-06.)* `doctor`, `probe`, `estimate`, `run` (local file, fake provider), `--json`, exit codes, job workspace under `FRAME_INGEST_HOME`. *Done when:* `frame-ingest run sample.mp4 --profile fake` produces the golden document. (Met as: a document with the golden file's exact skeleton; the golden file itself stays pinned by `test_assemble.py` because it uses fixed analysis data. Deviations: `-` as the input reads a path from stdin instead of a separate `--input -`; `doctor` is offline unless `--online`; `--profile` is required on `run` and `estimate`; only `fake` is runnable until M4/M5; `probe` and `estimate` take local files only.)
 
-**M2. Security core (before any URL code).** `guard/` (path jail, subprocess wrapper with limits and env scrub, ffmpeg argv builder, container allowlist, redaction, untrusted-text sanitizer, banner/frontmatter trust fields) plus the section 4.3 fixtures that apply to local files. *Done when:* the security suite passes and the flag-enumeration test exists.
+**M2. Security core (before any URL code).** *(Done 2026-10-06.)* `guard/` (path jail, subprocess wrapper with limits and env scrub, ffmpeg argv builder, container allowlist, redaction, untrusted-text sanitizer, banner/frontmatter trust fields) plus the section 4.3 fixtures that apply to local files. *Done when:* the security suite passes and the flag-enumeration test exists. (Met: `tests/test_security.py`. Notes: redaction stays in `errors.py`; the section 4.3 fixtures for URLs, redirects and yt-dlp wait for M3; `injection_flags`, `trust` and the banner are in every document, so the golden file was regenerated; `scan` is a library function now and becomes a command in M4; egress/`--offline`, config-file permissions and the sandbox are M5/M8.)
 
 **M3. URL ingest.** URL policy and pinned-IP fetcher, yt-dlp wrapper with version floor and post-run verification, captions parsing and dedupe, `fetch`. *Done when:* all SSRF/redirect/argument-injection fixtures pass and a public sample URL ingests end to end.
 
