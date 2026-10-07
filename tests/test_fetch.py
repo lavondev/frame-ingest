@@ -7,7 +7,6 @@ from __future__ import annotations
 import json
 import os
 import stat
-import sys
 from functools import partial
 from pathlib import Path
 from typing import Any
@@ -35,13 +34,9 @@ from frame_ingest.guard.ytdlp_args import (
     assert_safe,
     build_ytdlp_argv,
 )
+from tests.helpers import PUBLIC_IP, VTT, public
 
-PUBLIC_IP = "93.184.216.34"
 PUBLIC_V6 = "2606:2800:220:1:248:1893:25c8:1946"
-
-
-async def public(host: str, port: int) -> list[str]:
-    return [PUBLIC_IP]
 
 
 async def validate(url: str, **kw: Any) -> Any:
@@ -411,70 +406,6 @@ def test_ytdlp_limits_are_bounded_and_forbidden_options_are_detected(tmp_path: P
 
 
 # ── yt-dlp: version floor and run verification (a fake executable) ──────────────
-FAKE = """\
-import json, os, shutil, sys
-from pathlib import Path
-here = Path(__file__).parent
-spec = json.loads((here / "fake.json").read_text())
-args = sys.argv[1:]
-if "--version" in args:
-    print(spec["version"]); sys.exit(0)
-if "--dump-single-json" in args:
-    Path(here / "argv.json").write_text(json.dumps(args))
-    if spec.get("list_exit", 0):
-        sys.stderr.write("ERROR: cannot list\\n"); sys.exit(spec["list_exit"])
-    sys.stdout.write(spec["listing"] if isinstance(spec["listing"], str) else json.dumps(spec["listing"]))
-    sys.exit(0)
-if spec.get("exit", 0) not in (0, 101):
-    sys.stderr.write("ERROR: fake failure KEYSET=%s\\n" % ("1" if "OPENAI_API_KEY" in os.environ else "0"))
-    sys.exit(spec["exit"])
-out = Path(args[args.index("-o") + 1]).parent
-auto = "--write-auto-subs" in args
-Path(here / "argv.json").write_text(json.dumps(args))
-for name, how in spec["files"]:
-    if auto != name.endswith(".auto.vtt"):
-        if not (auto and name.endswith(".auto.vtt")) and not (not auto and not name.endswith(".auto.vtt")):
-            continue
-    target = out / name.replace(".auto.vtt", ".vtt")
-    if how.startswith("copy:"):
-        shutil.copy(how[5:], target)
-    elif how.startswith("link:"):
-        target.symlink_to(how[5:])
-    elif how == "dir":
-        target.mkdir()
-    else:
-        target.write_text(how[5:])
-sys.exit(spec.get("exit", 0))
-"""
-VTT = "WEBVTT\n\n00:00:01.000 --> 00:00:04.000\nHello from the captions.\n"
-
-
-@pytest.fixture
-def fake_ytdlp(tmp_path: Path, sample_video: Path) -> Any:
-    root = tmp_path / "fake"
-    root.mkdir()
-    script = root / "fake_ytdlp.py"
-    script.write_text(FAKE)
-
-    class Fake:
-        prefix = [sys.executable, str(script)]
-        video = sample_video
-
-        def set(self, **spec: Any) -> None:
-            base = {
-                "version": "2026.07.04",
-                "files": [["abc.mp4", f"copy:{sample_video}"]],
-                "exit": 0,
-            }
-            base.update(spec)
-            (root / "fake.json").write_text(json.dumps(base))
-
-        def argv(self) -> list[str]:
-            return json.loads((root / "argv.json").read_text())
-
-    f = Fake()
-    f.set()
-    return f
 
 
 async def run_yt(

@@ -13,10 +13,11 @@ It is built as an **Agent Skill plus a CLI**, so any coding agent that supports 
 - Local models: harnesses launched through Ollama work the same way, and a local profile can use
   Ollama for the vision and text stages.
 
-> **Status: pre-alpha.** Works on local files only. Agent mode (M4) is usable from a coding agent
-> today: no API key, you supply captions for the transcript. Pipeline mode (M5: `--profile cloud`
-> and `--profile local`) is built and tested offline but has not yet been run against real
-> providers. URLs (M3) and packaging (M6) are not built yet. Follow progress in `docs/PLAN.md`.
+> **Status: pre-alpha, feature complete, not yet field-tested.** Everything in the plan is built and
+> tested offline: local files and URLs, agent mode and the skill, pipeline mode (cloud and local),
+> security hardening and packaging. What has not happened yet is running it against the real
+> world: a real provider key, a real harness (Claude Code, Codex), a live yt-dlp download, a
+> tagged release and an external security review. See `docs/PLAN.md` for the exact list.
 
 ## Install
 

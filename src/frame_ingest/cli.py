@@ -45,7 +45,14 @@ from frame_ingest.agent.validate_doc import (
 from frame_ingest.budget import Budget, check_estimate
 from frame_ingest.capabilities import CapabilityMemo
 from frame_ingest.config import AppConfig, ConfigError, load_config
-from frame_ingest.doctor import HealthCheck, check_local, check_ytdlp, report_dict, run_doctor
+from frame_ingest.doctor import (
+    HealthCheck,
+    check_local,
+    check_sandbox,
+    check_ytdlp,
+    report_dict,
+    run_doctor,
+)
 from frame_ingest.egress import EgressDenied, build_plan, enforce
 from frame_ingest.engine import Engine, ProviderFactory
 from frame_ingest.errors import (
@@ -59,9 +66,12 @@ from frame_ingest.errors import (
 from frame_ingest.export import ExportRefused, export_document
 from frame_ingest.fetch.acquire import attach_captions, fetch_url
 from frame_ingest.fetch.policy import UrlRejected
+from frame_ingest.fetch.proxy import EgressProxy
 from frame_ingest.fetch.ytdlp import YtdlpTooOld, YtdlpUnavailable, list_playlist
+from frame_ingest.guard import sandbox
 from frame_ingest.guard.netblock import OfflineViolation, block_network
 from frame_ingest.guard.paths import PathRejected
+from frame_ingest.guard.sandbox import SandboxUnavailable
 from frame_ingest.guard.ytdlp_args import MAX_PLAYLIST_ITEMS
 from frame_ingest.models import EventType, Job, JobSettings, JobStatus
 from frame_ingest.profiles import PROFILES, ProfileUnavailable, profile_config, resolve_profile
@@ -107,7 +117,8 @@ def _exit_code_for(exc: FrameIngestError) -> int:
         | OfflineViolation
         | YtdlpUnavailable
         | YtdlpTooOld
-        | ExportRefused,
+        | ExportRefused
+        | SandboxUnavailable,
     ):
         return EXIT_UNAVAILABLE
     return EXIT_FAILED
@@ -175,9 +186,9 @@ async def _cmd_doctor(args: argparse.Namespace, config: AppConfig) -> Result:
     online = args.online or args.deep  # --deep spends a fraction of a cent: it is its own consent
     providers = resolve_profile("cloud", config).factory() if args.deep else None
     report = await run_doctor(config, memo, online=online, deep=args.deep, providers=providers)
-    yt = await check_ytdlp()
-    report.checks.append(yt)
-    report.ok = report.ok and yt.ok
+    for extra_check in (await check_ytdlp(), await check_sandbox()):
+        report.checks.append(extra_check)
+        report.ok = report.ok and extra_check.ok
     if args.profile == "local":
         extra: list[HealthCheck] = await check_local(config)
         report.checks += extra
@@ -368,7 +379,8 @@ async def _fetch_playlist(args: argparse.Namespace, config: AppConfig) -> Result
     if not _URL_RE.match(url):
         raise _usage("--allow-playlist needs a URL.")
     engine = _engine(config)
-    urls, refused = await list_playlist(url, max_items=args.max_items)
+    async with EgressProxy() as guard:
+        urls, refused = await list_playlist(url, max_items=args.max_items, proxy=guard.url)
     jobs: list[dict[str, Any]] = []
     for item in urls:  # each item is validated and downloaded on its own, one video at a time
         try:
@@ -699,6 +711,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         config = load_config()
         install_log_redaction(_secrets(config))
+        sandbox.configure(config.sandbox)
         result = asyncio.run(_HANDLERS[args.command](args, config))
     except _Usage as exc:
         return _fail(args, "usage", str(exc), EXIT_USAGE)

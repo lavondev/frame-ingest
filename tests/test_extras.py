@@ -21,8 +21,9 @@ from frame_ingest.guard.ytdlp_args import (
 )
 from frame_ingest.pipeline.assemble import render_markdown
 from frame_ingest.pipeline.metrics import compute_metrics
+from tests.helpers import VTT, public
 from tests.test_assemble import make_analysis
-from tests.test_fetch import VTT, fake_ytdlp, patch_fetch, public  # noqa: F401  (fixtures)
+from tests.test_fetch import patch_fetch
 
 
 @pytest.fixture

@@ -265,6 +265,23 @@ async def run_doctor(
     return health
 
 
+async def check_sandbox() -> HealthCheck:
+    from frame_ingest.guard import sandbox
+
+    mode, kind = sandbox.mode(), await sandbox.backend()
+    if kind:
+        return HealthCheck(name="sandbox", ok=True, message=f"{kind} works (mode: {mode}).")
+    if mode == "require":
+        return HealthCheck(
+            name="sandbox",
+            ok=False,
+            message="sandbox: require is set but no working sandbox was found "
+            "(macOS: sandbox-exec; Linux: bubblewrap with user namespaces).",
+        )
+    note = "off by config" if mode == "off" else "none available; ffmpeg runs unsandboxed"
+    return HealthCheck(name="sandbox", ok=True, message=f"{note} (mode: {mode}).")
+
+
 async def check_ytdlp() -> HealthCheck:
     """yt-dlp is only needed for page URLs; if present it must meet the security floor."""
     from frame_ingest.fetch.ytdlp import (

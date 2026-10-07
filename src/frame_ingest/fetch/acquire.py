@@ -17,6 +17,7 @@ import httpx
 from frame_ingest.config import AppConfig
 from frame_ingest.fetch.http import download_media, looks_like_direct_media
 from frame_ingest.fetch.policy import Resolver, validate_url
+from frame_ingest.fetch.proxy import EgressProxy
 from frame_ingest.fetch.ytdlp import download_with_ytdlp
 
 
@@ -39,7 +40,7 @@ async def fetch_url(
     resolver: Resolver | None = None,
     transport: httpx.AsyncBaseTransport | None = None,
     ytdlp_prefix: list[str] | None = None,
-    proxy: str | None = None,
+    use_proxy: bool = True,
 ) -> Acquired:
     max_bytes = int(config.max_file_mb * 1024 * 1024)
     incoming = config.home / "incoming"
@@ -53,14 +54,20 @@ async def fetch_url(
                 url, workdir, max_bytes=max_bytes, resolver=resolver, transport=transport
             )
             return Acquired(got.path, got.source, None, False, workdir)
-        res = await download_with_ytdlp(
-            url,
-            workdir,
-            max_bytes=max_bytes,
-            prefix=ytdlp_prefix,
-            resolver=resolver,
-            proxy=proxy,
-        )
+        if use_proxy:  # the URL policy is then enforced at connect time, for every connection
+            async with EgressProxy(resolver=resolver, max_bytes=max_bytes) as guard:
+                res = await download_with_ytdlp(
+                    url,
+                    workdir,
+                    max_bytes=max_bytes,
+                    prefix=ytdlp_prefix,
+                    resolver=resolver,
+                    proxy=guard.url,
+                )
+        else:
+            res = await download_with_ytdlp(
+                url, workdir, max_bytes=max_bytes, prefix=ytdlp_prefix, resolver=resolver
+            )
         return Acquired(res.media, validated.display, res.captions, res.captions_auto, workdir)
     except BaseException:
         shutil.rmtree(workdir, ignore_errors=True)

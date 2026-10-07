@@ -87,6 +87,9 @@ class AppConfig(BaseModel):
     # where `export` may write (PLAN T6): only locations the user lists here, never an argument
     export_roots: list[Path] = Field(default_factory=list)
 
+    # OS sandbox for ffmpeg (PLAN T3): off, auto (use it when it works), require (refuse without)
+    sandbox: Literal["off", "auto", "require"] = "auto"
+
     # egress policy (PLAN T8): `ask` prompts on a terminal and denies otherwise
     egress: Literal["deny", "ask", "allow"] = "ask"
 

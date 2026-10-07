@@ -83,6 +83,15 @@ Instead of steps 3 to 7 the CLI can call models itself: `fi run - --profile loca
 
 The result is the same document: continue at step 7 (`fi validate`, then `fi scan`).
 
+## More
+
+- `fi run ... --metrics` or `fi assemble <job_id> --metrics` adds pacing and hook metrics.
+- `fi export <job_id> --to <folder> [--style obsidian]` copies the finished document into a
+  folder the user has listed under `export_roots` in their config; it refuses anything else, so
+  do not try other locations. If it says none is configured, tell the user.
+- `fi fetch <url> --allow-playlist --max-items N` makes one job per video (at most 25); use it
+  only when the user asked for a playlist.
+
 ## When something goes wrong
 
 Exit codes: 0 ok, 1 the work failed or validation found problems, 2 usage error, 3 input

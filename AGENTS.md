@@ -43,6 +43,12 @@ Supabase sync and `.env` loading were dropped. Design rationale: `docs/ARCHITECT
   guards and runs the same `assemble` stage; `validate_doc.py` backs `validate` and `scan`.
   `tests/test_agent.py` drives the whole loop with a scripted stand-in agent. Regenerate the
   published schemas with `UPDATE_SCHEMAS=1 uv run pytest tests/test_agent.py`.
+- M3/M7/M8 additions: `fetch/` (`policy.py` URL policy, `http.py` pinned-IP fetcher, `ytdlp.py` +
+  `guard/ytdlp_args.py` hardened yt-dlp, `proxy.py` connect-time egress guard, `acquire.py` URL to
+  local file); `guard/sandbox.py` (OS sandbox for ffmpeg, config `sandbox`); `export.py`
+  (export confined to config `export_roots`); `pipeline/metrics.py` (`--metrics`);
+  `tests/test_fuzz.py` (hypothesis; failures are stored in the git-ignored `.hypothesis/`).
+  `docs/THREAT-MODEL-REVIEW.md` maps every control to its code and tests.
 - M5 (providers): `profiles.py` resolves `--profile` to a config and providers (`fake`, `cloud`,
   `local`; `agent` has no `run`). `egress.py` builds the egress plan from the estimate and
   enforces consent; `budget.py` is the `--max-cost` hard stop; `guard/netblock.py` implements

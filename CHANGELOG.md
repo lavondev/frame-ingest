@@ -17,6 +17,9 @@ First tagged version. Everything below is new.
 - URL ingest: URL policy, pinned-IP fetcher, hardened yt-dlp (version floor 2026.7.4).
 - Agent mode and the Agent Skill: evidence pack with contact sheets, validating `assemble`.
 - Pipeline mode: `cloud` and `local` profiles, egress plan and consent, `--offline`, `--max-cost`.
+- Pacing and hook metrics, safe export (Markdown or Obsidian), capped playlists, speaker labels.
+- Hardening: OS sandbox for ffmpeg (sandbox-exec, bubblewrap), egress-guard proxy for yt-dlp,
+  hypothesis fuzzing, a disclosure process and a threat-model brief for reviewers.
 - Packaging: Claude Code plugin and marketplace manifests, portable plugin manifest, Codex skill
   metadata, deterministic `.skill` zip, pinned launcher, release workflow (OIDC, attestations).
 
