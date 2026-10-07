@@ -43,6 +43,12 @@ Supabase sync and `.env` loading were dropped. Design rationale: `docs/ARCHITECT
   guards and runs the same `assemble` stage; `validate_doc.py` backs `validate` and `scan`.
   `tests/test_agent.py` drives the whole loop with a scripted stand-in agent. Regenerate the
   published schemas with `UPDATE_SCHEMAS=1 uv run pytest tests/test_agent.py`.
+- M5 (providers): `profiles.py` resolves `--profile` to a config and providers (`fake`, `cloud`,
+  `local`; `agent` has no `run`). `egress.py` builds the egress plan from the estimate and
+  enforces consent; `budget.py` is the `--max-cost` hard stop; `guard/netblock.py` implements
+  `--offline` (loopback-only sockets); `providers/faster_whisper.py` is local speech (optional
+  extra `local`). `run` always prints the plan to stderr before anything is sent. Never add a path
+  that builds a cloud provider without going through `egress.enforce`.
 - `skills/frame-ingest/`: the Agent Skill (`SKILL.md`, `scripts/fi` launcher, `references/`).
   `tests/test_skill_spec.py` lints it: spec frontmatter, `allowed-tools` covers only the launcher
   and Read, no network fetches or pipes to interpreters, every command and flag it names exists.

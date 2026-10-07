@@ -17,6 +17,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from frame_ingest.budget import Budget
 from frame_ingest.capabilities import CapabilityMemo
 from frame_ingest.config import AppConfig, Pricing, known_caps, load_pricing, resolve_settings
 from frame_ingest.errors import FrameIngestError, redact
@@ -170,6 +171,7 @@ class Engine:
         settings: JobSettings | None = None,
         *,
         filename: str | None = None,
+        profile: str | None = None,
     ) -> Job:
         """Copy `source` into a new job directory, probe it and record the job.
 
@@ -197,6 +199,7 @@ class Engine:
             id=job_id,
             created_at=now,
             updated_at=now,
+            profile=profile,
             status=JobStatus.CREATED,
             settings=resolve_settings(self.config, settings),
             video=video,
@@ -235,6 +238,7 @@ class Engine:
         *,
         force: set[StageName] | None = None,
         on_event: EventCallback | None = None,
+        budget: Budget | None = None,
     ) -> Job:
         """Run (or resume) a job to completion. Returns the job with its final status.
 
@@ -259,6 +263,7 @@ class Engine:
             video=video,
             video_path=self.video_path(job),
             providers=providers,
+            budget=budget,
             emit_cb=emit,
         )
         hooks = _Hooks(self, job, ctx, emit)

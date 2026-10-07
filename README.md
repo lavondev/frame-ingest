@@ -14,8 +14,9 @@ It is built as an **Agent Skill plus a CLI**, so any coding agent that supports 
   Ollama for the vision and text stages.
 
 > **Status: pre-alpha.** Works on local files only. Agent mode (M4) is usable from a coding agent
-> today: no API key, you supply captions for the transcript. URLs (M3), real providers and
-> speech-to-text (M5) and packaging (M6) are not built yet. Follow progress in `docs/PLAN.md`.
+> today: no API key, you supply captions for the transcript. Pipeline mode (M5: `--profile cloud`
+> and `--profile local`) is built and tested offline but has not yet been run against real
+> providers. URLs (M3) and packaging (M6) are not built yet. Follow progress in `docs/PLAN.md`.
 
 ## Try it (pre-alpha)
 
@@ -39,7 +40,23 @@ frame-ingest prepare video.mp4 --captions video.srt   # evidence pack + manifest
 frame-ingest assemble <job_id>                        # validate, then write the document
 frame-ingest validate <document.md>
 frame-ingest run video.mp4 --profile fake             # offline demo with canned output
-``` Follow progress in `docs/PLAN.md`.
+```
+
+**Pipeline mode (the CLI calls the models).**
+
+```bash
+frame-ingest estimate video.mp4 --profile cloud       # frames, tokens, cost, and the egress plan
+frame-ingest run video.mp4 --profile cloud            # asks before sending anything (a terminal)
+frame-ingest run video.mp4 --profile cloud --allow-egress --max-cost 2   # non-interactive
+# fully local: uv tool install ".[local]", ollama pull the two models, then
+frame-ingest doctor --profile local
+frame-ingest run video.mp4 --profile local --offline
+```
+
+`cloud` needs `OPENAI_API_KEY` (or per-role `FRAME_INGEST_<ROLE>_API_KEY`) in the environment and
+optionally `OPENAI_BASE_URL` for Groq, vLLM and other OpenAI-compatible servers. Before anything
+is sent, `run` prints what goes where; with no terminal it refuses unless `--allow-egress` is
+given or `egress: allow` is set. Prices for `--max-cost` go in `~/.frame-ingest/pricing.yaml`. Follow progress in `docs/PLAN.md`.
 
 ## What makes it different
 

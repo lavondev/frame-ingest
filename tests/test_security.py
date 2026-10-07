@@ -80,7 +80,7 @@ def test_no_shell_true_anywhere() -> None:
 
 def test_no_network_client_in_the_core_before_the_egress_gate() -> None:
     """Only the OpenAI-compatible client and doctor may talk to the network (rule 7)."""
-    allowed = {"providers/openai_client.py", "doctor.py"}
+    allowed = {"providers/openai_client.py", "doctor.py", "guard/netblock.py"}
     needles = (
         "import httpx",
         "import requests",
@@ -493,6 +493,11 @@ def _options(parser: argparse.ArgumentParser) -> dict[str, set[str]]:
 # Reviewed flags. Adding one fails this test on purpose: decide that it cannot execute code,
 # write outside the job directory, reveal a secret or reach the network, then add it here.
 # Review notes for flags that touch the filesystem or take free text:
+#   --allow-egress    consents to the cloud destinations that `run` prints first. It can send the
+#                     user's frames/audio to a provider, so SKILL.md forbids passing it unasked;
+#                     the plan lists exact destinations and `--offline` always overrides it.
+#   --offline         only restricts (blocks non-loopback sockets); --max-cost only restricts.
+#   --deep            implies --online and spends a fraction of a cent on two probes.
 #   --captions FILE   reads a user-named file, but only .srt/.vtt, regular, non-symlink, <= 5 MB,
 #                     parsed strictly (non-cue lines are dropped); its content is never echoed.
 #   --start/--end     floats, bounded by the video duration; extract frames inside the job dir.
@@ -500,10 +505,10 @@ def _options(parser: argparse.ArgumentParser) -> dict[str, set[str]]:
 #                     keys, line numbers and counts only, never file content.
 _INPUT = {"-h", "--help", "--json", "input", "--job", "--frame-cap", "--language"}
 REVIEWED_FLAGS = {
-    "doctor": {"-h", "--help", "--json", "--online"},
+    "doctor": {"-h", "--help", "--json", "--online", "--deep", "--profile"},
     "probe": {"-h", "--help", "--json", "input"},
     "estimate": {*_INPUT, "--profile"},
-    "run": {*_INPUT, "--profile"},
+    "run": {*_INPUT, "--profile", "--allow-egress", "--offline", "--max-cost"},
     "prepare": {*_INPUT, "--captions", "--dense", "--start", "--end"},
     "assemble": {"-h", "--help", "--json", "job"},
     "validate": {"-h", "--help", "--json", "document"},

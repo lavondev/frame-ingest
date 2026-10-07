@@ -35,6 +35,14 @@ Implemented so far (local files only; there is no URL ingest yet):
   segment id sets, verbatim quotes, contiguous chapters) before a document exists. Caption files
   must be `.srt`/`.vtt`, regular, non-symlink and size-capped, and are parsed strictly. `validate`
   and `scan` never echo file content. The skill pre-approves only its own launcher and `Read`.
+- **Egress consent.** Before a cloud run the CLI computes, from the estimate, what would be sent
+  where (audio minutes, frames, text, destination hosts, models, cost) and prints it. It then
+  requires an interactive yes, `--allow-egress` or `egress: allow`; with no terminal and none of
+  those it refuses. Only loopback counts as staying on the machine. `--offline` overrides every
+  consent and blocks non-loopback sockets and DNS for the whole run. `--max-cost` refuses an
+  over-budget or unpriceable run up front and stops a running one at the cap. Because the skill
+  pre-approves its launcher with any arguments, SKILL.md tells the agent never to pass
+  `--allow-egress` without the user's yes; that instruction is a control, not a guarantee.
 - **No network use** except the OpenAI-compatible provider client, and nothing runs against it
   yet (`--profile cloud` is not implemented).
 

@@ -177,19 +177,20 @@ def test_a_media_file_that_is_not_media_is_rejected(
 
 
 # ── profiles, usage, exit codes ──────────────────────────────────────────────
-@pytest.mark.parametrize("profile", ["cloud", "local", "agent"])
-def test_unimplemented_profiles_fail_loudly_without_egress(
-    profile: str,
-    home: Path,
-    sample_video: Path,
-    capsys: pytest.CaptureFixture[str],
-    monkeypatch: pytest.MonkeyPatch,
+def test_agent_profile_has_no_run(
+    home: Path, sample_video: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    monkeypatch.setenv("OPENAI_API_KEY", FAKE_API_KEY)
-    code, out, _ = invoke(capsys, "run", str(sample_video), "--profile", profile, "--json")
-    assert code == 4
-    assert json.loads(out)["error"]["code"] == "profile_unavailable"
+    code, out, _ = invoke(capsys, "run", str(sample_video), "--profile", "agent", "--json")
+    assert code == 4 and json.loads(out)["error"]["code"] == "profile_unavailable"
     assert jobs(home) == []  # failed before the input was even copied
+
+
+def test_cloud_profile_without_a_key_fails_before_anything_is_copied(
+    home: Path, sample_video: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    code, out, _ = invoke(capsys, "run", str(sample_video), "--profile", "cloud", "--json")
+    assert code == 4 and json.loads(out)["error"]["code"] == "missing_api_key"
+    assert jobs(home) == []
 
 
 def test_usage_errors_exit_2(

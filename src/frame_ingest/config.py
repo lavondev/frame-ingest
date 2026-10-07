@@ -17,7 +17,7 @@ import logging
 import os
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, ValidationError
@@ -59,6 +59,16 @@ class BaseUrls(BaseModel):
     text: str | None = None
 
 
+class LocalProfile(BaseModel):
+    """The `local` profile: faster-whisper on this machine for speech, an OpenAI-compatible
+    server on this machine (Ollama by default) for vision and text. Names are configuration."""
+
+    base_url: str = "http://127.0.0.1:11434/v1"
+    whisper_model: str = "small"
+    vision_model: str = "qwen2.5vl:7b"
+    text_model: str = "qwen3:8b"
+
+
 class ImageTokenHeuristics(BaseModel):
     """Per-image input-token guesses used ONLY by the estimate; real usage comes from the API."""
 
@@ -72,6 +82,10 @@ class AppConfig(BaseModel):
 
     models: StageModels = Field(default_factory=StageModels)
     base_urls: BaseUrls = Field(default_factory=BaseUrls)
+    local: LocalProfile = Field(default_factory=LocalProfile)
+
+    # egress policy (PLAN T8): `ask` prompts on a terminal and denies otherwise
+    egress: Literal["deny", "ask", "allow"] = "ask"
 
     # LLM call behaviour
     reasoning_effort: str | None = "low"
@@ -181,6 +195,7 @@ def _scalar_fields() -> list[str]:
     skip = {
         "models",
         "base_urls",
+        "local",
         "image_tokens",
         "api_key",
         "role_api_keys",
@@ -221,6 +236,13 @@ def _env_overlay(env: Mapping[str, str]) -> dict[str, Any]:
             urls[role] = val
     if urls:
         over["base_urls"] = urls
+    local: dict[str, str] = {}
+    for name in LocalProfile.model_fields:
+        val = env.get(f"{ENV_PREFIX}LOCAL_{name.upper()}")
+        if val:
+            local[name] = val
+    if local:
+        over["local"] = local
     return over
 
 

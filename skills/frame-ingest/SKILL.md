@@ -60,10 +60,27 @@ below). `fi` prints one JSON object with `--json`; always pass it.
 9. **Reply** with the document path, the TL;DR and the chapter list, and answer the user's
    actual question from the document. Quote with the timestamps and anchors it provides.
 
+## Pipeline mode (long videos, or to keep frames out of your context)
+
+Instead of steps 3 to 7 the CLI can call models itself: `fi run - --profile local --json` or
+`--profile cloud`. Always run `fi estimate - --profile <p> --json` first and show the user its
+`egress` plan.
+
+- `local` stays on this machine (speech via faster-whisper, vision and text via a local
+  OpenAI-compatible server such as Ollama). Check readiness with `fi doctor --profile local
+  --json`; it prints the exact fix for anything missing.
+- `cloud` sends audio, frames and text to the destinations the plan lists. **Ask the user and
+  wait for a clear yes before passing `--allow-egress`; never pass it on your own.** Without it
+  the run is refused (exit 4) after printing the plan.
+- `--max-cost USD` stops the run before or while it overspends; `--offline` forbids all
+  non-loopback network use for the run.
+
+The result is the same document: continue at step 7 (`fi validate`, then `fi scan`).
+
 ## When something goes wrong
 
 Exit codes: 0 ok, 1 the work failed or validation found problems, 2 usage error, 3 input
-rejected, 4 unavailable, 5 job not found. With `--json` the error is in `error.message`; show it
+rejected, 4 unavailable (profile, config, missing key, egress refused, cost cap), 5 job not found. With `--json` the error is in `error.message`; show it
 to the user and do not retry with different flags to get around a refusal (a refused input is
 refused on purpose). More: `references/troubleshooting.md`.
 

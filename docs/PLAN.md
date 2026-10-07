@@ -1,6 +1,6 @@
 # frame-ingest — plan and architecture
 
-Status: draft v1, 2026-10-06. Written for hand-off to Claude Code. Repo scaffold is in place and milestones M0 (pipeline ported from faircopy) M1 (CLI skeleton), M2 (security core) and M4 (agent mode and the skill, minus the harness smoke tests) are done; next is M3 (URL ingest) or M5 (providers). The section 10 decisions other than the repo are still open.
+Status: draft v1, 2026-10-06. Written for hand-off to Claude Code. Repo scaffold is in place and milestones M0 (pipeline ported from faircopy) M1 (CLI skeleton), M2 (security core) and M4 (agent mode and the skill, minus the harness smoke tests) and M5 (providers and profiles, minus the live-API check) are built; next is M3 (URL ingest) or M6 (packaging). The section 10 decisions other than the repo are still open.
 Source project: `faircopy` (lavondev/faircopy). Target: an open-source Agent Skill, `/frame-ingest <video file | URL>`, that works across coding-agent harnesses.
 
 ---
@@ -268,7 +268,7 @@ argument-hint: <video file or URL>
 
 **M4. Agent mode and the skill.** *(Built 2026-10-06; harness smoke tests still to run.)* `prepare` (evidence pack, contact sheets, drill-down), JSON Schemas, `assemble` validators for agent outputs, `validate`, `scan`, SKILL.md and references. *Done when:* the same sample video yields a valid document through Claude Code **and** Codex, driven by the SKILL.md alone, with a scripted smoke test per harness (verify each harness's non-interactive mode). (Built and tested offline with a scripted stand-in agent through the public CLI: `tests/test_agent.py`. **Not yet done:** running the skill under real Claude Code and Codex. Deviations: with no ASR before M5 the transcript comes from `--captions file.srt|vtt` (or is empty); `scan` takes a job or a document; no subagent fan-out; `agents/openai.yaml` and the Codex plugin wait for M6, when the format can be verified; the launcher runs an installed `frame-ingest` or a repository checkout and downloads nothing until M6 pins a release.)
 
-**M5. Providers and profiles.** `openai_compat` (OpenAI, Groq, Ollama), `faster_whisper` extra, egress consent gate, `--offline`, cost caps. Run faircopy's never-exercised live-API paths against a real key once (`health --deep`) and fix drift. *Done when:* `--profile local` runs fully offline on a sample video, and `--profile cloud` shows an accurate egress summary before spending.
+**M5. Providers and profiles.** *(Built 2026-10-06; live checks still to run.)* `openai_compat` (OpenAI, Groq, Ollama), `faster_whisper` extra, egress consent gate, `--offline`, cost caps. Run faircopy's never-exercised live-API paths against a real key once (`health --deep`) and fix drift. *Done when:* `--profile local` runs fully offline on a sample video, and `--profile cloud` shows an accurate egress summary before spending. (Built and tested offline with fakes: `tests/test_providers.py`. **Not yet done, needs you:** the live-API check (`doctor --online --deep` with a real key), a real `--profile local` run (needs `uv tool install ".[local]"`, `ollama pull` of the two models and a Whisper download), so none of the real provider paths has run in this repository. Decisions taken from the plan's suggestions, change on request: egress defaults to `ask` interactively and `deny` otherwise (config `egress:`), only loopback counts as not leaving the machine, `--allow-egress` is the non-interactive consent. Left out: `--max-tokens`, Groq/Ollama presets beyond base-URL config, `anthropic`.)
 
 **M6. Packaging and distribution.** `pyproject` extras, lockfile hashes, `scripts/fi` launcher, Claude Code plugin and marketplace manifests, Codex plugin (after verifying format), `skills-ref validate`, release workflow (OIDC publish, attestations, `.skill` zip, checksums), install docs, install test matrix via `npx skills add` into Claude Code, Codex and one more `.agents/skills` harness. *Done when:* a clean machine goes from install to `/frame-ingest sample.mp4` with no manual steps beyond installing `uv`.
 
@@ -292,7 +292,7 @@ argument-hint: <video file or URL>
 
 1. **Name and repo.** ~~Decided 2026-10-06:~~ fresh repo `lavondev/frame-ingest`. Still open: whether to keep "Faircopy Markdown" as the name of the output format, and where the old app lives (suggestion: leave it in `lavondev/faircopy`, archived).
 2. **License.** Apache-2.0 (patent grant, common for tools) or MIT (simplest, matches claude-watch). Either works; pick before the first public commit.
-3. **Default egress.** Suggestion: `ask` interactively, `deny` otherwise (as above).
+3. **Default egress.** ~~Suggestion~~ Implemented as suggested in M5 (`ask` interactively, `deny` otherwise); still the owner's call.
 4. **Scope of v0.1.** Suggestion: local files + agent mode + security core first, URL ingest in v0.2. This gets a safe, useful skill out sooner.
 5. **Viewer.** Keep the Next.js workspace as a separate optional package later, or retire it.
 

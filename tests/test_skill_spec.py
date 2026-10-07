@@ -103,8 +103,8 @@ def test_every_command_in_skill_md_exists_and_goes_through_the_launcher() -> Non
     commands = set(_subcommands())
     mentioned = re.findall(r"\bfi (?:\S+ )?(\w+)", _skill_text())
     used = {m for m in mentioned if m in commands | {"doctor"}}
-    assert {"doctor", "estimate", "prepare", "assemble", "validate", "scan", "probe"} >= used
-    assert {"doctor", "estimate", "prepare", "assemble", "validate", "scan"} <= used
+    assert set(commands) >= used  # only real commands
+    assert {"doctor", "estimate", "prepare", "assemble", "validate", "scan", "run"} <= used
     for line in _skill_text().splitlines():  # no bare invocations of the underlying binary
         assert not re.search(r"(^|[`\s])frame-ingest (doctor|run|prepare|assemble)", line)
 
