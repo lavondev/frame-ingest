@@ -14,6 +14,7 @@ dependencies = [
     "imagehash>=4.3",
     "openai>=3.24",
     "tenacity>=8.5",
+    "httpx>=0.27",
 ]
 classifiers = [
     "Development Status :: 2 - Pre-Alpha",
@@ -27,6 +28,8 @@ classifiers = [
 [project.optional-dependencies]
 # Speech-to-text on this machine for `--profile local` (docs/PLAN.md section 3.5).
 local = ["faster-whisper>=1.0"]
+# Page URLs (YouTube and similar) through a hardened yt-dlp (docs/PLAN.md T4).
+url = ["yt-dlp>=2026.7.4"]
 
 [project.scripts]
 frame-ingest = "frame_ingest.cli:main"

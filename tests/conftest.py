@@ -124,3 +124,13 @@ def _job_jail(tmp_path_factory: pytest.TempPathFactory) -> Iterator[None]:
 
     with job_jail(tmp_path_factory.getbasetemp()):
         yield
+
+
+@pytest.fixture(autouse=True)
+def _no_real_dns(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Tests never resolve real hostnames; URL tests inject their own resolver or patch this."""
+
+    async def refuse(host: str, port: int) -> list[str]:
+        raise OSError("DNS is disabled in tests")
+
+    monkeypatch.setattr("frame_ingest.fetch.policy.system_resolver", refuse)

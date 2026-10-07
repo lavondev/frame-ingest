@@ -172,6 +172,8 @@ class Engine:
         *,
         filename: str | None = None,
         profile: str | None = None,
+        source_url: str | None = None,
+        move: bool = False,
     ) -> Job:
         """Copy `source` into a new job directory, probe it and record the job.
 
@@ -200,12 +202,16 @@ class Engine:
             created_at=now,
             updated_at=now,
             profile=profile,
+            source_url=source_url,
+            retrieved_at=now if source_url else None,
             status=JobStatus.CREATED,
             settings=resolve_settings(self.config, settings),
             video=video,
             stages=new_stage_states(),
         )
         self.save(job)
+        if move:  # a private download we own: do not keep two copies on disk
+            source.unlink(missing_ok=True)
         return job
 
     def update_settings(self, job_id: str, settings: JobSettings) -> Job:
@@ -264,6 +270,8 @@ class Engine:
             video_path=self.video_path(job),
             providers=providers,
             budget=budget,
+            source_url=job.source_url,
+            retrieved_at=job.retrieved_at,
             emit_cb=emit,
         )
         hooks = _Hooks(self, job, ctx, emit)

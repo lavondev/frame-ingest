@@ -127,7 +127,7 @@ class Transcript(BaseModel):
     model: str | None = None
     language: str | None = None
     timestamp_precision: Literal["segment", "chunk", "none"] = "none"
-    source: Literal["asr", "captions", "none"] = "asr"
+    source: Literal["asr", "captions", "auto-captions", "none"] = "asr"
     chunk_count: int = 0
     segments: list[Segment] = Field(default_factory=list)
 
@@ -273,6 +273,8 @@ class Analysis(BaseModel):
     # reader; consumers must treat it as data (PLAN T1).
     trust: Literal["untrusted-content"] = "untrusted-content"
     mode: Literal["pipeline", "agent"] = "pipeline"
+    source_url: str | None = None
+    retrieved_at: datetime | None = None
     injection_flags: dict[str, int] = Field(default_factory=dict)
     analyzed_at: datetime
     video: VideoInfo
@@ -332,6 +334,8 @@ class Job(BaseModel):
     created_at: datetime
     updated_at: datetime
     profile: str | None = None  # provider profile the job was created under (None: any)
+    source_url: str | None = None  # display form (no query string) when fetched from a URL
+    retrieved_at: datetime | None = None
     status: JobStatus
     settings: ResolvedSettings
     video: VideoInfo | None = None

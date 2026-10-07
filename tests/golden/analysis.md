@@ -1,6 +1,8 @@
 ---
+faircopy_format: 1
 title: Widget Frobnicator Walkthrough
 source_file: demo video.mp4
+input_sha256: abababababababababababababababababababababababababababababababab
 duration: 00:01:30
 duration_seconds: 90.0
 resolution: 320x240

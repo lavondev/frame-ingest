@@ -185,9 +185,11 @@ def render_markdown(a: Analysis) -> str:
         "correct": a.settings.correct_model if segments else None,
         "synthesize": a.settings.synthesize_model,
     }
-    front = {
+    front: dict[str, object] = {
+        "faircopy_format": 1,
         "title": clean(title),
         "source_file": clean(a.video.filename),
+        "input_sha256": a.video.sha256,
         "duration": fmt_ts(d),
         "duration_seconds": round(d, 2),
         "resolution": resolution,
@@ -202,6 +204,11 @@ def render_markdown(a: Analysis) -> str:
         "timestamp_precision": a.transcript.timestamp_precision,
         "injection_flags": a.injection_flags,
     }
+    if a.source_url:
+        front["source_url"] = clean(a.source_url)
+        front["retrieved_at"] = (
+            a.retrieved_at.strftime("%Y-%m-%dT%H:%M:%SZ") if a.retrieved_at else None
+        )
     out: list[str] = [
         "---",
         yaml.safe_dump(front, sort_keys=False, allow_unicode=True).rstrip(),
@@ -433,6 +440,8 @@ def build_analysis(ctx: PipelineContext) -> Analysis:
         failed_batches=ctx.all_failed_batches(),
     )
     return Analysis(
+        source_url=ctx.source_url,
+        retrieved_at=ctx.retrieved_at,
         analyzed_at=utcnow(),
         video=ctx.video,
         settings=ctx.settings,

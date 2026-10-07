@@ -161,6 +161,22 @@ def _dumps(obj: object) -> str:
     return json.dumps(obj, indent=2, ensure_ascii=False)
 
 
+def _fetched_captions(job_dir: Path, duration: float) -> Transcript | None:
+    """Captions that came with a downloaded video (manual first, auto-generated last)."""
+    for stem, source in (("captions", "captions"), ("captions-auto", "auto-captions")):
+        for suffix in (".vtt", ".srt"):
+            path = job_dir / f"{stem}{suffix}"
+            if path.is_file() and not path.is_symlink():
+                try:
+                    segs = load_captions(path, duration)
+                except FrameIngestError:
+                    continue
+                return Transcript(
+                    model=source, timestamp_precision="segment", source=source, segments=segs
+                )
+    return None
+
+
 async def prepare(
     engine: Engine,
     job_id: str,
@@ -201,7 +217,7 @@ async def prepare(
                 segments=segs,
             )
         elif transcript is None:
-            transcript = Transcript(source="none")
+            transcript = _fetched_captions(job_dir, video.duration_s) or Transcript(source="none")
         atomic_write_text(adir / "transcript.json", transcript.model_dump_json(indent=2))
 
         manifest = _build_manifest(engine, job, registry, transcript, adir, drilled)

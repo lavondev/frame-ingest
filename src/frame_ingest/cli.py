@@ -3,7 +3,8 @@
 M1 commands: `doctor`, `probe`, `estimate`, `run`, all on local files and all offline unless
 `doctor --online` is given. The rest of the planned surface (docs/PLAN.md, section 3.2) arrives
 with its milestone. No command runs an external process other than through the engine's ffmpeg
-wrapper until the guard layer (M2) exists, and none accepts a URL before M3.
+wrapper. URLs are accepted by fetch/probe/estimate/prepare/run and downloaded first through
+`fetch/` (a pinned-IP fetcher or a hardened yt-dlp); ffmpeg only ever reads local files.
 
 Conventions (the agent-facing contract):
 
@@ -44,7 +45,7 @@ from frame_ingest.agent.validate_doc import (
 from frame_ingest.budget import Budget, check_estimate
 from frame_ingest.capabilities import CapabilityMemo
 from frame_ingest.config import AppConfig, ConfigError, load_config
-from frame_ingest.doctor import HealthCheck, check_local, report_dict, run_doctor
+from frame_ingest.doctor import HealthCheck, check_local, check_ytdlp, report_dict, run_doctor
 from frame_ingest.egress import EgressDenied, build_plan, enforce
 from frame_ingest.engine import Engine, ProviderFactory
 from frame_ingest.errors import (
@@ -55,6 +56,9 @@ from frame_ingest.errors import (
     install_log_redaction,
     redact,
 )
+from frame_ingest.fetch.acquire import attach_captions, fetch_url
+from frame_ingest.fetch.policy import UrlRejected
+from frame_ingest.fetch.ytdlp import YtdlpTooOld, YtdlpUnavailable
 from frame_ingest.guard.netblock import OfflineViolation, block_network
 from frame_ingest.guard.paths import PathRejected
 from frame_ingest.models import EventType, Job, JobSettings, JobStatus
@@ -68,7 +72,7 @@ EXIT_UNAVAILABLE = 4
 EXIT_NOT_FOUND = 5
 EXIT_INTERRUPTED = 130
 
-PLANNED_COMMANDS = ("fetch", "clean")
+PLANNED_COMMANDS = ("clean",)
 
 _URL_RE = re.compile(r"^[A-Za-z][A-Za-z0-9+.\-]*://")
 _ECHO_LIMIT = 200
@@ -88,12 +92,19 @@ class Result:
 
 
 def _exit_code_for(exc: FrameIngestError) -> int:
-    if isinstance(exc, InputRejected | MediaError | PathRejected):
+    if isinstance(exc, InputRejected | MediaError | PathRejected | UrlRejected):
         return EXIT_INPUT
     if isinstance(exc, JobNotFound):
         return EXIT_NOT_FOUND
     if isinstance(
-        exc, ProfileUnavailable | ConfigError | FatalProviderError | EgressDenied | OfflineViolation
+        exc,
+        ProfileUnavailable
+        | ConfigError
+        | FatalProviderError
+        | EgressDenied
+        | OfflineViolation
+        | YtdlpUnavailable
+        | YtdlpTooOld,
     ):
         return EXIT_UNAVAILABLE
     return EXIT_FAILED
@@ -113,8 +124,7 @@ def _resolve_input(raw: str, *, what: str = "file") -> Path:
             raise InputRejected("Expected a path on stdin but got nothing.")
     if _URL_RE.match(raw):
         raise InputRejected(
-            f"{_echo(raw)} looks like a URL. URL ingest is not available yet (planned for M3); "
-            f"pass a local {what}."
+            f"{_echo(raw)} looks like a URL, but this command needs a local {what}."
         )
     try:
         path = Path(raw).expanduser()
@@ -159,6 +169,9 @@ async def _cmd_doctor(args: argparse.Namespace, config: AppConfig) -> Result:
     online = args.online or args.deep  # --deep spends a fraction of a cent: it is its own consent
     providers = resolve_profile("cloud", config).factory() if args.deep else None
     report = await run_doctor(config, memo, online=online, deep=args.deep, providers=providers)
+    yt = await check_ytdlp()
+    report.checks.append(yt)
+    report.ok = report.ok and yt.ok
     if args.profile == "local":
         extra: list[HealthCheck] = await check_local(config)
         report.checks += extra
@@ -172,11 +185,10 @@ async def _cmd_doctor(args: argparse.Namespace, config: AppConfig) -> Result:
 
 
 async def _cmd_probe(args: argparse.Namespace, config: AppConfig) -> Result:
-    source = _resolve_input(args.input)
     # ffmpeg only ever sees a file inside a job directory (AGENTS.md rule 4), so probing makes a
-    # private copy there and removes it afterwards.
+    # private copy there (downloading first for a URL) and removes it afterwards.
     engine = _engine(config)
-    job = await engine.create(source)
+    job = await _create_from(args.input, engine, None, None, False)
     try:
         video = job.video
         if video is None:  # pragma: no cover - create() always probes
@@ -211,7 +223,39 @@ async def _job_for(
         return job
     if args.input is None:
         raise _usage("Give an input file or --job <id>.")
-    return await engine.create(_resolve_input(args.input), settings, profile=profile)
+    return await _create_from(
+        args.input, engine, settings, profile, getattr(args, "offline", False)
+    )
+
+
+def _stdin_or(raw: str) -> str:
+    if raw != "-":
+        return raw
+    value = sys.stdin.readline().strip()
+    if not value:
+        raise InputRejected("Expected a path or URL on stdin but got nothing.")
+    return value
+
+
+async def _create_from(
+    raw: str, engine: Engine, settings: JobSettings | None, profile: str | None, offline: bool
+) -> Job:
+    """A new job from a local file or a URL (downloaded first, into a private directory)."""
+    value = _stdin_or(raw)
+    if not _URL_RE.match(value):
+        return await engine.create(_resolve_input(value), settings, profile=profile)
+    if offline:
+        raise EgressDenied("--offline forbids downloading a URL.")
+    acquired = await fetch_url(value, engine.config)
+    print(f"downloaded from {acquired.source_url}", file=sys.stderr)
+    try:
+        job = await engine.create(
+            acquired.path, settings, profile=profile, source_url=acquired.source_url, move=True
+        )
+        attach_captions(engine.store.dir(job.id), acquired)
+    finally:
+        acquired.cleanup()
+    return job
 
 
 class _Usage(Exception):
@@ -311,6 +355,33 @@ async def _cmd_run(args: argparse.Namespace, config: AppConfig) -> Result:
     return Result(payload, lines)
 
 
+async def _cmd_fetch(args: argparse.Namespace, config: AppConfig) -> Result:
+    engine = _engine(config)
+    job = await _create_from(args.input, engine, None, None, False)
+    video = job.video
+    if video is None:  # pragma: no cover - create() always probes
+        raise MediaError("The file could not be probed.")
+    job_dir = engine.store.dir(job.id)
+    captions = next(
+        (p.name for p in sorted(job_dir.glob("captions*.*")) if p.suffix in {".vtt", ".srt"}), None
+    )
+    payload = {
+        "ok": True,
+        "job_id": job.id,
+        "source_url": job.source_url,
+        "file": str(engine.video_path(job)),
+        "size_bytes": video.size_bytes,
+        "sha256": video.sha256,
+        "duration_s": video.duration_s,
+        "captions": captions,
+    }
+    lines = [
+        f"job {job.id}: {video.filename}, {video.duration_s:.1f}s, {video.size_bytes} bytes"
+        + (f", captions: {captions}" if captions else ""),
+    ]
+    return Result(payload, lines)
+
+
 async def _cmd_prepare(args: argparse.Namespace, config: AppConfig) -> Result:
     engine = _engine(config)
     job = await _job_for(args, engine, _settings(args))
@@ -397,6 +468,7 @@ async def _cmd_scan(args: argparse.Namespace, config: AppConfig) -> Result:
 
 
 _HANDLERS = {
+    "fetch": _cmd_fetch,
     "prepare": _cmd_prepare,
     "assemble": _cmd_assemble,
     "validate": _cmd_validate,
@@ -415,7 +487,7 @@ def _add_common(sub: argparse.ArgumentParser) -> None:
 
 def _add_input(sub: argparse.ArgumentParser, *, profile: bool) -> None:
     sub.add_argument(
-        "input", nargs="?", help="local video file, or '-' to read the path from stdin"
+        "input", nargs="?", help="local video file or http(s) URL, or '-' to read it from stdin"
     )
     sub.add_argument("--job", metavar="ID", help="use an existing job (resumes it for `run`)")
     sub.add_argument("--frame-cap", type=int, help="maximum number of frames to analyse")
@@ -465,9 +537,18 @@ def build_parser() -> argparse.ArgumentParser:
         "--profile", choices=("local",), help="also check readiness of the local profile"
     )
 
+    fetch = subs.add_parser(
+        "fetch", help="download a URL (or adopt a file) into a job, no analysis"
+    )
+    _add_common(fetch)
+    fetch.add_argument("input", help="http(s) URL or local file, or '-' to read it from stdin")
+    fetch.set_defaults(job=None)
+
     probe = subs.add_parser("probe", help="duration, resolution, fps and audio of a local file")
     _add_common(probe)
-    probe.add_argument("input", help="local video file, or '-' to read the path from stdin")
+    probe.add_argument(
+        "input", help="local video file or http(s) URL, or '-' to read it from stdin"
+    )
 
     estimate = subs.add_parser("estimate", help="frames, calls and tokens; no network egress")
     _add_common(estimate)

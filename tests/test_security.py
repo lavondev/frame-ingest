@@ -80,7 +80,14 @@ def test_no_shell_true_anywhere() -> None:
 
 def test_no_network_client_in_the_core_before_the_egress_gate() -> None:
     """Only the OpenAI-compatible client and doctor may talk to the network (rule 7)."""
-    allowed = {"providers/openai_client.py", "doctor.py", "guard/netblock.py"}
+    allowed = {
+        "providers/openai_client.py",
+        "doctor.py",
+        "guard/netblock.py",
+        "fetch/http.py",
+        "fetch/acquire.py",
+        "fetch/policy.py",
+    }
     needles = (
         "import httpx",
         "import requests",
@@ -493,6 +500,9 @@ def _options(parser: argparse.ArgumentParser) -> dict[str, set[str]]:
 # Reviewed flags. Adding one fails this test on purpose: decide that it cannot execute code,
 # write outside the job directory, reveal a secret or reach the network, then add it here.
 # Review notes for flags that touch the filesystem or take free text:
+#   fetch / URL inputs  every URL goes through fetch.policy (http/https, no credentials, port
+#                     allowlist, public addresses only, redirects re-validated) and lands in a
+#                     private directory that the engine then adopts; yt-dlp gets a fixed argv.
 #   --allow-egress    consents to the cloud destinations that `run` prints first. It can send the
 #                     user's frames/audio to a provider, so SKILL.md forbids passing it unasked;
 #                     the plan lists exact destinations and `--offline` always overrides it.
@@ -507,6 +517,7 @@ _INPUT = {"-h", "--help", "--json", "input", "--job", "--frame-cap", "--language
 REVIEWED_FLAGS = {
     "doctor": {"-h", "--help", "--json", "--online", "--deep", "--profile"},
     "probe": {"-h", "--help", "--json", "input"},
+    "fetch": {"-h", "--help", "--json", "input"},
     "estimate": {*_INPUT, "--profile"},
     "run": {*_INPUT, "--profile", "--allow-egress", "--offline", "--max-cost"},
     "prepare": {*_INPUT, "--captions", "--dense", "--start", "--end"},

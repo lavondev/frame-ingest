@@ -275,10 +275,10 @@ async def assemble_job(engine: Engine, job_id: str) -> Job:
             f"Job '{job.id}' has no evidence pack. Run prepare first.", code="not_prepared"
         )
     out_dir = agent_dir(job_dir) / "out"
-    captions = transcript.source == "captions"
+    captions = transcript.source in {"captions", "auto-captions"}
     settings = job.settings.model_copy(
         update={
-            "transcribe_model": "captions" if captions else "none",
+            "transcribe_model": transcript.source if captions else "none",
             "vision_model": "agent",
             "correct_model": "agent",
             "synthesize_model": "agent",
@@ -292,6 +292,8 @@ async def assemble_job(engine: Engine, job_id: str) -> Job:
         video=job.video,
         video_path=engine.video_path(job),
         providers=fake_bundle(),
+        source_url=job.source_url,
+        retrieved_at=job.retrieved_at,
     )
     problems: list[dict[str, str]] = []
     with job_jail(job_dir):
@@ -305,7 +307,7 @@ async def assemble_job(engine: Engine, job_id: str) -> Job:
         ctx.results = {
             StageName.TRANSCRIBE: TranscribeResult(
                 transcript=Transcript(
-                    model="captions" if captions else None,
+                    model=transcript.source if captions else None,
                     timestamp_precision=transcript.timestamp_precision,
                     source=transcript.source,
                     segments=transcript.segments,

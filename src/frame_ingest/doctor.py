@@ -265,6 +265,31 @@ async def run_doctor(
     return health
 
 
+async def check_ytdlp() -> HealthCheck:
+    """yt-dlp is only needed for page URLs; if present it must meet the security floor."""
+    from frame_ingest.fetch.ytdlp import (
+        INSTALL_HINT,
+        YtdlpUnavailable,
+        check_version,
+        default_prefix,
+    )
+
+    try:
+        prefix = default_prefix()
+    except YtdlpUnavailable:
+        return HealthCheck(
+            name="yt-dlp",
+            ok=True,
+            message=f"not installed (only needed for page URLs). {INSTALL_HINT}",
+        )
+    try:
+        return HealthCheck(
+            name="yt-dlp", ok=True, message=f"{await check_version(prefix)} (meets the floor)."
+        )
+    except FrameIngestError as exc:
+        return HealthCheck(name="yt-dlp", ok=False, message=exc.message)
+
+
 async def check_local(config: AppConfig) -> list[HealthCheck]:
     """Readiness of the `local` profile. Only ever talks to loopback."""
     from urllib.parse import urlsplit
