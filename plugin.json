@@ -1,0 +1,23 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "frame-ingest",
+  "version": "0.1.0",
+  "description": "Turn a video (local file or URL) into a structured, citable Markdown document with a corrected transcript, chapters, summaries, glossary and entity index.",
+  "author": { "name": "lavondev" },
+  "homepage": "https://github.com/lavondev/frame-ingest",
+  "repository": "https://github.com/lavondev/frame-ingest",
+  "keywords": ["video", "transcript", "markdown", "citations", "agent-skill"],
+  "extensions": {
+    "com.openai": {
+      "interface": {
+        "displayName": "frame-ingest",
+        "shortDescription": "Turn a video into a structured, citable Markdown document",
+        "developerName": "lavondev",
+        "category": "Productivity",
+        "capabilities": ["Read", "Write"],
+        "websiteURL": "https://github.com/lavondev/frame-ingest",
+        "defaultPrompt": ["Use frame-ingest on this video and summarise it with citations."]
+      }
+    }
+  }
+}
