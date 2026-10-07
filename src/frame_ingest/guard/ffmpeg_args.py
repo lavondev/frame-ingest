@@ -64,7 +64,7 @@ VALUE_OPTIONS: dict[str, Callable[[str], bool]] = {
     "-map_metadata": _matches(re.compile(r"^-?\d{1,3}$")),
     "-avoid_negative_ts": _one_of("make_zero", "make_non_negative", "auto"),
     "-map": _matches(re.compile(r"^\d{1,3}:[av]:\d{1,3}$")),
-    "-f": _one_of("lavfi", "null"),
+    "-f": _one_of("lavfi", "null", "f32le"),  # f32le: raw 32-bit float samples, for local ASR
     "-vf": _filter_ok,
 }
 

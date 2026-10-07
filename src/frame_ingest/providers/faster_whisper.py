@@ -32,6 +32,29 @@ def is_available() -> bool:
     return True
 
 
+SAMPLE_RATE = 16000
+_MAX_PCM_BYTES = 512 * 1024 * 1024  # 32 minutes of 16 kHz float samples
+
+
+async def _decode_pcm(audio: Path) -> Any:
+    """Audio file -> mono 16 kHz float32 samples, decoded by our guarded, sandboxed ffmpeg.
+
+    faster-whisper would otherwise decode with PyAV inside this process, outside the ffmpeg
+    allowlist and sandbox."""
+    import numpy as np
+
+    from frame_ingest.ffmpeg import run_ffmpeg
+
+    res = await run_ffmpeg(
+        ["-i", str(audio), "-vn", "-ac", "1", "-ar", str(SAMPLE_RATE), "-f", "f32le", "-"],
+        timeout=900,
+        max_stdout=_MAX_PCM_BYTES,
+    )
+    if res.returncode != 0 or not res.stdout:
+        raise ProviderError("The audio chunk could not be decoded for transcription.")
+    return np.frombuffer(res.stdout, dtype=np.float32)
+
+
 class FasterWhisperTranscriber:
     def __init__(
         self,
@@ -89,11 +112,11 @@ class FasterWhisperTranscriber:
                     ) from exc
             return self._model
 
-    def _decode(self, audio: Path, prompt: str | None, language: str | None) -> RawTranscription:
+    def _decode(self, samples: Any, prompt: str | None, language: str | None) -> RawTranscription:
         model = self._load()
         try:
             segments, info = model.transcribe(
-                str(audio),
+                samples,
                 language=language,
                 initial_prompt=prompt,
                 vad_filter=True,
@@ -130,7 +153,8 @@ class FasterWhisperTranscriber:
             require_regular_file(audio, what="audio chunk")
         except PathRejected as exc:
             raise ProviderError(exc.message) from None
+        samples = await _decode_pcm(audio)
         async with self._run_lock:
-            res = await asyncio.to_thread(self._decode, audio, prompt, language)
+            res = await asyncio.to_thread(self._decode, samples, prompt, language)
         res.usage.audio_seconds = duration_s
         return res

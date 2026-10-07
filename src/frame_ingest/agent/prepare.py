@@ -29,7 +29,9 @@ from frame_ingest.engine import Engine
 from frame_ingest.errors import FrameIngestError
 from frame_ingest.guard.paths import job_jail
 from frame_ingest.models import FrameInfo, Job, ProcessingWarning, Segment, StageName, Transcript
+from frame_ingest.pipeline import audio as audio_stage
 from frame_ingest.pipeline import frames as frames_stage
+from frame_ingest.pipeline import transcribe as transcribe_stage
 from frame_ingest.pipeline.context import PipelineContext
 from frame_ingest.pipeline.synthesize import chapter_target_range
 from frame_ingest.pipeline.timefmt import fmt_ts, frame_filename
@@ -70,7 +72,8 @@ class PrepareError(FrameIngestError):
     status = 400
 
 
-def _context(engine: Engine, job: Job) -> PipelineContext:
+def _context(engine: Engine, job: Job, emit: Any = None) -> PipelineContext:
+    extra: dict[str, Any] = {"emit_cb": emit} if emit else {}
     return PipelineContext(
         job_id=job.id,
         job_dir=engine.store.dir(job.id),
@@ -80,6 +83,7 @@ def _context(engine: Engine, job: Job) -> PipelineContext:
         video_path=engine.video_path(job),
         providers=fake_bundle(),
         current_stage=StageName.FRAMES,
+        **extra,
     )
 
 
@@ -161,6 +165,34 @@ def _dumps(obj: object) -> str:
     return json.dumps(obj, indent=2, ensure_ascii=False)
 
 
+async def _transcribe_locally(engine: Engine, job: Job, emit: Any) -> Transcript | None:
+    """Speech-to-text on this machine when there are no captions (optional extra `local`).
+
+    Nothing leaves the machine except, on the very first use, the speech model's weights being
+    downloaded from Hugging Face. Returns None when it cannot run (no extra, no audio, disabled)."""
+    from frame_ingest.providers.faster_whisper import FasterWhisperTranscriber, is_available
+
+    cfg = engine.config
+    video = _video(job)
+    if not (cfg.agent_transcribe and video.has_audio and is_available()):
+        return None
+    model = cfg.local.whisper_model
+    ctx = _context(engine, job, emit)
+    ctx.providers.transcriber = FasterWhisperTranscriber(
+        model, download_root=cfg.home / "models", offline=False
+    )
+    ctx.settings = job.settings.model_copy(update={"transcribe_model": model})
+    ctx.keys[StageName.AUDIO] = ctx.keys[StageName.TRANSCRIBE] = f"agent-asr-{model}"
+    ctx.current_stage = StageName.AUDIO
+    ctx.results[StageName.AUDIO] = await audio_stage.run(ctx)
+    ctx.current_stage = StageName.TRANSCRIBE
+    result = await transcribe_stage.run(ctx)
+    transcript = result.transcript
+    if not transcript.segments:
+        return Transcript(source="none")
+    return transcript.model_copy(update={"source": "asr"})
+
+
 def _fetched_captions(job_dir: Path, duration: float) -> Transcript | None:
     """Captions that came with a downloaded video (manual first, auto-generated last)."""
     for stem, source in (("captions", "captions"), ("captions-auto", "auto-captions")):
@@ -185,6 +217,7 @@ async def prepare(
     start: float | None = None,
     end: float | None = None,
     dense: bool = False,
+    on_event: Any = None,
 ) -> dict[str, Any]:
     """Create or refresh the evidence pack; returns the manifest."""
     job = engine.load(job_id)
@@ -217,12 +250,37 @@ async def prepare(
                 segments=segs,
             )
         elif transcript is None:
-            transcript = _fetched_captions(job_dir, video.duration_s) or Transcript(source="none")
+            transcript = _fetched_captions(job_dir, video.duration_s)
+            if transcript is None:
+                transcript = await _transcribe_locally(engine, job, on_event) or Transcript(
+                    source="none"
+                )
         atomic_write_text(adir / "transcript.json", transcript.model_dump_json(indent=2))
 
         manifest = _build_manifest(engine, job, registry, transcript, adir, drilled)
         atomic_write_text(adir / "manifest.json", _dumps(manifest))
     return manifest
+
+
+def _transcript_note(engine: Engine, has_audio: bool, transcript: Transcript) -> str:
+    if not has_audio:
+        return "No transcript: the video has no audio track."
+    if transcript.source == "asr":
+        return (
+            f"Transcribed on this machine with {transcript.model}. Expect mistakes in names and "
+            "jargon: fix them in corrections.json using what you read on screen. Segments carry "
+            "ids; corrections must keep them exactly."
+        )
+    if transcript.segments:
+        return "Segments carry ids; corrections must keep them exactly."
+    from frame_ingest.providers.faster_whisper import is_available
+
+    if is_available() and engine.config.agent_transcribe:
+        return "No speech was found in the audio track."
+    return (
+        "No transcript. Pass --captions <file.srt|file.vtt>, or install the local speech extra "
+        'for automatic transcription: uv tool install ".[local]".'
+    )
 
 
 def _build_manifest(
@@ -286,13 +344,7 @@ def _build_manifest(
             "segments": len(transcript.segments),
             "file": str(adir / "transcript.json"),
             "windows": windows,
-            "note": (
-                "No transcript: the video has no audio track."
-                if not video.has_audio
-                else "No transcript: pass --captions <file.srt|file.vtt> to add one."
-                if not transcript.segments
-                else "Segments carry ids; corrections must keep them exactly."
-            ),
+            "note": _transcript_note(engine, video.has_audio, transcript),
         },
         "frames": frame_rows,
         "sheets": sheets,

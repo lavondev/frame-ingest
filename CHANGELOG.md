@@ -9,6 +9,7 @@ First tagged version. Everything below is new.
 
 ### Added
 - MIT license.
+- One-step install (`scripts/install.sh`) and automatic local transcription in agent mode.
 - Pipeline ported from faircopy (probe, audio, transcribe, frames, vision, correct, synthesize,
   assemble) with a content-chained stage cache and resumable jobs.
 - CLI: `doctor`, `probe`, `estimate`, `run`, `fetch`, `prepare`, `assemble`, `validate`, `scan`,

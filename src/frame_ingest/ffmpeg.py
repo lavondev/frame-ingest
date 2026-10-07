@@ -12,7 +12,7 @@ from frame_ingest.errors import FrameIngestError
 from frame_ingest.guard import sandbox
 from frame_ingest.guard.ffmpeg_args import build_argv
 from frame_ingest.guard.paths import current_jail
-from frame_ingest.guard.subproc import run_process
+from frame_ingest.guard.subproc import Limits, run_process
 
 
 @functools.lru_cache(maxsize=1)
@@ -37,7 +37,11 @@ class FFResult:
 
 
 async def run_ffmpeg(
-    args: list[str], *, timeout: float = 3600, loglevel: str = "error"
+    args: list[str],
+    *,
+    timeout: float = 3600,
+    loglevel: str = "error",
+    max_stdout: int | None = None,
 ) -> FFResult:
     """Run ffmpeg through the guard layer: the argv is rebuilt from an allowlist (inputs and
     outputs must be inside the active job directory) and the process runs with a scrubbed
@@ -46,7 +50,8 @@ async def run_ffmpeg(
     argv = build_argv(args, loglevel=loglevel, jail=jail)
     exe = ffmpeg_exe()
     cmd = await sandbox.wrap([exe, *argv], jail=jail, exe_dir=Path(exe).parent)
-    res = await run_process(cmd, timeout=timeout, cwd=jail)
+    limits = Limits(max_stdout=max_stdout) if max_stdout else None
+    res = await run_process(cmd, timeout=timeout, cwd=jail, limits=limits)
     return FFResult(res.returncode, res.stdout, res.stderr.decode("utf-8", errors="replace"))
 
 

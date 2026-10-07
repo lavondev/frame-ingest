@@ -49,6 +49,11 @@ Supabase sync and `.env` loading were dropped. Design rationale: `docs/ARCHITECT
   (export confined to config `export_roots`); `pipeline/metrics.py` (`--metrics`);
   `tests/test_fuzz.py` (hypothesis; failures are stored in the git-ignored `.hypothesis/`).
   `docs/THREAT-MODEL-REVIEW.md` maps every control to its code and tests.
+- Install and agent-mode speech: `scripts/install.sh` links the skill into `~/.claude/skills` and
+  `~/.agents/skills` and warms the environment; `skills/frame-ingest/scripts/fi` runs the checkout
+  it lives in (resolving symlinks), so the skill always runs the code it shipped with. With no
+  captions, `prepare` transcribes locally (`agent/prepare.py`, config `agent_transcribe`);
+  `providers/faster_whisper.py` decodes audio through our sandboxed ffmpeg, never PyAV.
 - M5 (providers): `profiles.py` resolves `--profile` to a config and providers (`fake`, `cloud`,
   `local`; `agent` has no `run`). `egress.py` builds the egress plan from the estimate and
   enforces consent; `budget.py` is the `--max-cost` hard stop; `guard/netblock.py` implements

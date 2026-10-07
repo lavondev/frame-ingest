@@ -476,6 +476,15 @@ def test_offline_local_run_never_leaves_loopback(
 
 
 # ── local profile ───────────────────────────────────────────────────────────────
+async def make_tone(path: Path) -> None:
+    """A real one-second Ogg file: local transcription decodes audio with our own ffmpeg."""
+    from frame_ingest.ffmpeg import run_ffmpeg
+
+    await run_ffmpeg(
+        ["-y", "-f", "lavfi", "-i", "sine=duration=1", "-c:a", "libopus", str(path)], timeout=60
+    )
+
+
 class FakeWhisperModel:
     instances: list[FakeWhisperModel] = []
 
@@ -483,8 +492,9 @@ class FakeWhisperModel:
         self.name, self.kw = name, kw
         FakeWhisperModel.instances.append(self)
 
-    def transcribe(self, path: str, **kw: Any) -> tuple[Any, Any]:
+    def transcribe(self, path: Any, **kw: Any) -> tuple[Any, Any]:
         self.last = (path, kw)
+        self.samples = path
         segs = [
             types.SimpleNamespace(start=0.0, end=3.5, text=" Welcome to the Widjet Frobnicator. "),
             types.SimpleNamespace(start=3.5, end=7.0, text="  "),  # blank: dropped
@@ -515,7 +525,7 @@ async def test_faster_whisper_transcriber_maps_segments_and_honours_offline(
 ) -> None:
     install_fake_whisper(monkeypatch)
     audio = tmp_path / "chunk.ogg"
-    audio.write_bytes(b"OggS" + b"\x00" * 64)
+    await make_tone(audio)
     tr = FasterWhisperTranscriber("small", download_root=tmp_path / "models", offline=True)
     res = await tr.transcribe(
         audio,
@@ -532,6 +542,9 @@ async def test_faster_whisper_transcriber_maps_segments_and_honours_offline(
     ]
     assert res.precision == "segment" and res.language == "en" and res.usage.audio_seconds == 10.0
     model = FakeWhisperModel.instances[0]
+    samples = model.samples  # decoded by our ffmpeg, not by PyAV in this process
+    assert str(samples.dtype) == "float32" and samples.ndim == 1
+    assert 15000 < len(samples) < 17500  # ~1 s at 16 kHz
     assert model.kw["local_files_only"] is True and model.kw["download_root"].endswith("models")
     assert model.last[1]["initial_prompt"] == "Widget" and model.last[1]["language"] == "en"
     assert tr.caps_for("small").segment_timestamps and not tr.caps_for("small").diarization
@@ -545,7 +558,7 @@ async def test_faster_whisper_errors_are_actionable_and_key_free(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     audio = tmp_path / "chunk.ogg"
-    audio.write_bytes(b"OggS" + b"\x00" * 64)
+    await make_tone(audio)
     kw: dict[str, Any] = {
         "model": "small",
         "duration_s": 1.0,

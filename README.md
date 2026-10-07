@@ -21,16 +21,22 @@ It is built as an **Agent Skill plus a CLI**, so any coding agent that supports 
 
 ## Install
 
-You need [uv](https://docs.astral.sh/uv/). Until the first release is on PyPI, install from the
-repository:
+You need [uv](https://docs.astral.sh/uv/) and git. One step, for Claude Code and Codex:
 
 ```bash
-uv tool install git+https://github.com/lavondev/frame-ingest        # the CLI
-uv tool install "frame-ingest[url,local] @ git+https://github.com/lavondev/frame-ingest"   # + URLs, local speech
-frame-ingest doctor
+git clone https://github.com/lavondev/frame-ingest ~/.frame-ingest-src
+~/.frame-ingest-src/scripts/install.sh
 ```
 
-**The skill.** Pick the route that matches your agent; all of them use the same `skills/frame-ingest/`:
+Then, in a new Claude Code session, type `/frame-ingest <video file or URL>` (in Codex,
+`$frame-ingest <video file or URL>`). Videos without captions are transcribed on your own
+machine; nothing is uploaded for that.
+
+To use only the command line, `uv tool install "frame-ingest[url,local] @
+git+https://github.com/lavondev/frame-ingest"` puts `frame-ingest` on your PATH, then
+`frame-ingest doctor`.
+
+**Other ways to get the skill** (all use the same `skills/frame-ingest/`):
 
 | Agent | How |
 |---|---|
@@ -39,7 +45,7 @@ frame-ingest doctor
 | Any skills installer | `npx skills add lavondev/frame-ingest` |
 | By hand | download `frame-ingest-<version>.skill` from a release (a zip; verify it against `SHA256SUMS`) and unzip it into your agent's skills directory |
 
-The skill's launcher uses an installed `frame-ingest`, then a repository checkout, then a pinned
+The skill's launcher runs the checkout it lives in, then an installed `frame-ingest`, then a pinned
 release through `uvx`; it never downloads "latest" and never pipes a script into a shell.
 
 ## Try it
@@ -91,7 +97,7 @@ given or `egress: allow` is set. Prices for `--max-cost` go in `~/.frame-ingest/
 ## Documentation
 
 - [`docs/PLAN.md`](docs/PLAN.md): architecture, security model, roadmap and open decisions.
-- [`docs/TESTING.md`](docs/TESTING.md): a step-by-step guide to trying it by hand (CLI, Claude Code, Codex).
+- [`docs/TESTING.md`](docs/TESTING.md): the quick try-it page; [`docs/TESTING-DEEP.md`](docs/TESTING-DEEP.md) has the thorough checks.
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md): why the pipeline works the way it does.
 - [`SECURITY.md`](SECURITY.md): how to report a vulnerability.
 - [`AGENTS.md`](AGENTS.md): instructions for coding agents working in this repository.

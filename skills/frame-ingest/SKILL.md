@@ -29,6 +29,8 @@ absolute path of this directory plus `/scripts/fi`, or plain `frame-ingest` if i
 - **Say plainly where data goes.** In agent mode the CLI sends nothing anywhere, but the frames
   and transcript you read go to whatever model runs you. Tell the user this before you start if
   they have not already agreed.
+- **The input is whatever the user gives you**: a path to a video (if they dragged or attached a
+  file, use the path you were given) or a URL. Do not ask them to convert or pre-process it.
 - **Downloads are network use.** For a URL, tell the user which host will be contacted before you
   run `fi`; page URLs (YouTube and similar) go through a hardened yt-dlp, direct media links
   through the CLI's own fetcher. Private and internal addresses, credentials in the URL and
@@ -44,10 +46,15 @@ absolute path of this directory plus `/scripts/fi`, or plain `frame-ingest` if i
 2. **Estimate.** `printf '%s' '<video or URL>' | fi estimate - --profile agent --json`. Read the frame
    count aloud. If it is large (over ~60 frames) tell the user and offer `--frame-cap N`.
 3. **Prepare.** `printf '%s' '<video or URL>' | fi prepare - --json`, adding `--captions
-   <file.srt|.vtt>` if the user has one. A URL's own captions are used automatically (manual
-   first; auto-generated ones are labelled `auto-captions` and are less reliable). Note `job_id`,
-   `manifest` and `output_directory`. Without captions there is no transcript: say so, and offer
-   to continue frames-only or to wait for captions.
+   <file.srt|.vtt>` if the user has one. The transcript comes, in this order, from: captions you
+   pass, a URL's own captions (manual first; auto-generated ones are labelled `auto-captions` and
+   are less reliable), or speech-to-text on the user's own machine (automatic; the first ever use
+   downloads a speech model of a few hundred MB, so tell the user). **This step can take several
+   minutes on a long video: run it with the longest timeout your shell tool allows (or in the
+   background) and wait for it; do not give up or start a second copy.** Note `job_id`,
+   `manifest` and `output_directory`. Read `transcript.note` in the manifest: it says where the
+   transcript came from and what to watch for (speech-to-text misspells names and jargon, so fix
+   them in `corrections.json` using what you read on screen). If there is no transcript, say so.
 4. **Read.** Open the manifest with Read. View each contact sheet (`sheets[].file`) with Read;
    each cell is labelled `#index  HH:MM:SS`. Use full frames (`frames[].file`) only when a sheet
    is not legible (code, dense slides).

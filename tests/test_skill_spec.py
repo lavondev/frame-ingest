@@ -72,6 +72,7 @@ import subprocess  # noqa: E402
 
 from frame_ingest.cli import build_parser  # noqa: E402
 
+ROOT = SKILLS_DIR.parent
 FI_DIR = SKILLS_DIR / "frame-ingest"
 
 
@@ -143,14 +144,19 @@ def test_launcher_explains_how_to_install_when_nothing_is_available() -> None:
     )
     if shutil.which("uv", path="/usr/bin:/bin"):  # pragma: no cover - uv in a system dir
         pytest.skip("uv is on the minimal PATH")
-    assert res.returncode == 4 and "uv tool install" in res.stderr
+    assert res.returncode == 4 and "scripts/install.sh" in res.stderr
 
 
 def test_launcher_runs_the_cli_from_a_checkout() -> None:
     uv = shutil.which("uv")
     if uv is None:
         pytest.skip("uv not installed")
-    env = {**os.environ, "PATH": f"{Path(uv).parent}:/usr/bin:/bin", "UV_OFFLINE": "1"}
+    env = {
+        **os.environ,
+        "PATH": f"{Path(uv).parent}:/usr/bin:/bin",
+        "UV_OFFLINE": "1",
+        "FRAME_INGEST_EXTRAS": "",  # no heavy extras in the test
+    }
     res = subprocess.run(
         ["/bin/sh", str(FI_DIR / "scripts" / "fi"), "--version"],
         env=env,
@@ -160,3 +166,56 @@ def test_launcher_runs_the_cli_from_a_checkout() -> None:
         timeout=120,
     )
     assert res.returncode == 0 and "frame-ingest" in res.stdout
+
+
+def test_launcher_resolves_the_checkout_through_a_symlink(tmp_path: Path) -> None:
+    uv = shutil.which("uv")
+    if uv is None:
+        pytest.skip("uv not installed")
+    skills = tmp_path / "agent-skills"
+    skills.mkdir()
+    (skills / "frame-ingest").symlink_to(FI_DIR)  # how install.sh links it
+    env = {
+        **os.environ,
+        "PATH": f"{Path(uv).parent}:/usr/bin:/bin",
+        "UV_OFFLINE": "1",
+        "FRAME_INGEST_EXTRAS": "",
+    }
+    res = subprocess.run(
+        ["/bin/sh", str(skills / "frame-ingest" / "scripts" / "fi"), "--version"],
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=120,
+        cwd=tmp_path,
+    )
+    assert res.returncode == 0 and "frame-ingest" in res.stdout, res.stderr
+
+
+def test_install_script_links_the_skill_for_claude_and_codex_and_is_safe(tmp_path: Path) -> None:
+    script = ROOT / "scripts" / "install.sh"
+    assert os.access(script, os.X_OK)
+    home = tmp_path / "home"
+    home.mkdir()
+    env = {"HOME": str(home), "PATH": "/usr/bin:/bin", "FRAME_INGEST_SKIP_WARM": "1"}
+
+    def run() -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            ["/bin/sh", str(script)], env=env, capture_output=True, text=True, check=False
+        )
+
+    for _ in range(2):  # re-running is fine
+        res = run()
+        assert res.returncode == 0, res.stderr
+        for where in (".claude/skills", ".agents/skills"):
+            link = home / where / "frame-ingest"
+            assert link.is_symlink() and link.resolve() == FI_DIR.resolve()
+    assert "/frame-ingest" in res.stdout and "$frame-ingest" in res.stdout
+
+    (home / ".claude" / "skills" / "frame-ingest").unlink()  # a real folder is never clobbered
+    (home / ".claude" / "skills" / "frame-ingest").mkdir()
+    (home / ".claude" / "skills" / "frame-ingest" / "mine.txt").write_text("keep")
+    res = run()
+    assert res.returncode == 0 and "skipped" in res.stderr
+    assert (home / ".claude" / "skills" / "frame-ingest" / "mine.txt").read_text() == "keep"

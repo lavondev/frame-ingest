@@ -87,6 +87,9 @@ class AppConfig(BaseModel):
     # where `export` may write (PLAN T6): only locations the user lists here, never an argument
     export_roots: list[Path] = Field(default_factory=list)
 
+    # Agent mode: transcribe locally (faster-whisper) when a video has speech but no captions
+    agent_transcribe: bool = True
+
     # OS sandbox for ffmpeg (PLAN T3): off, auto (use it when it works), require (refuse without)
     sandbox: Literal["off", "auto", "require"] = "auto"
 

@@ -1,34 +1,38 @@
 #!/bin/sh
 # Launcher for the frame-ingest CLI. Order of preference:
-#   1. a `frame-ingest` already on PATH (uv tool install, pipx install)
-#   2. a checkout of the repository this skill lives in (uv run)
-#   3. the pinned release below, fetched by uvx (the only step that downloads anything)
+#   1. the repository checkout this skill lives in (works through symlinks and plugin caches), so
+#      the skill always runs the version it shipped with; uv builds the environment on first use,
+#      with local speech and URL support
+#   2. a `frame-ingest` already on PATH (uv tool install, pipx install)
+#   3. the pinned release below, fetched by uvx (the only step that downloads a release)
 # Otherwise it exits with 4 and tells the user how to install.
 set -eu
+
+# Extras the checkout route installs. Override (set it empty for none) with FRAME_INGEST_EXTRAS.
+EXTRAS=${FRAME_INGEST_EXTRAS-"--extra local --extra url"}
+
+here=$(cd "$(dirname "$0")" && pwd -P)
+repo=$(cd "$here/../../.." 2>/dev/null && pwd -P || true)
+if [ -n "$repo" ] && [ -f "$repo/pyproject.toml" ] && grep -q '^name = "frame-ingest"' "$repo/pyproject.toml" \
+   && command -v uv >/dev/null 2>&1; then
+  # shellcheck disable=SC2086
+  exec uv run --quiet --project "$repo" $EXTRAS frame-ingest "$@"
+fi
 
 if command -v frame-ingest >/dev/null 2>&1; then
   exec frame-ingest "$@"
 fi
 
-here=$(cd "$(dirname "$0")" && pwd)
-repo=$(cd "$here/../../.." 2>/dev/null && pwd || true)
-if [ -n "$repo" ] && [ -f "$repo/pyproject.toml" ] && grep -q '^name = "frame-ingest"' "$repo/pyproject.toml" \
-   && command -v uv >/dev/null 2>&1; then
-  exec uv run --quiet --project "$repo" frame-ingest "$@"
-fi
-
 # 3. A pinned release from PyPI through uvx: never "latest", never a piped installer.
 PIN="0.1.0"
 if command -v uvx >/dev/null 2>&1; then
-  exec uvx --quiet --from "frame-ingest==$PIN" frame-ingest "$@"
+  exec uvx --quiet --from "frame-ingest[local,url]==$PIN" frame-ingest "$@"
 fi
 
 cat >&2 <<'MSG'
 error: the frame-ingest CLI is not installed.
-Install uv (https://docs.astral.sh/uv/), then either:
-    uv tool install frame-ingest
-or, from a checkout of the repository:
-    git clone https://github.com/lavondev/frame-ingest && cd frame-ingest && uv tool install .
+Install uv (https://docs.astral.sh/uv/), then from a checkout of the repository run:
+    ./scripts/install.sh
 Then run the command again.
 MSG
 exit 4

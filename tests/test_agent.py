@@ -536,3 +536,89 @@ def test_published_schemas_match_the_models(name: str) -> None:
         SCHEMA_DIR.mkdir(parents=True, exist_ok=True)
         path.write_text(schema_text(name), encoding="utf-8")
     assert path.read_text(encoding="utf-8") == schema_text(name)
+
+
+# ── no captions: transcribe on this machine ─────────────────────────────────────
+class _FakeWhisperModel:
+    instances: list[_FakeWhisperModel] = []
+
+    def __init__(self, name: str, **kw: Any) -> None:
+        self.name = name
+        _FakeWhisperModel.instances.append(self)
+
+    def transcribe(self, path: str, **kw: Any) -> tuple[Any, Any]:
+        import types
+
+        segs = [
+            types.SimpleNamespace(start=0.0, end=3.5, text=" Welcome to the Widjet Frobnicator. "),
+            types.SimpleNamespace(start=7.0, end=10.0, text="Open the dashboard first."),
+        ]
+        return iter(segs), types.SimpleNamespace(language="en")
+
+
+@pytest.fixture
+def local_whisper(monkeypatch: pytest.MonkeyPatch) -> type[_FakeWhisperModel]:
+    import sys
+    import types
+
+    _FakeWhisperModel.instances.clear()
+    mod = types.ModuleType("faster_whisper")
+    mod.WhisperModel = _FakeWhisperModel  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "faster_whisper", mod)
+    return _FakeWhisperModel
+
+
+def test_without_captions_a_video_is_transcribed_locally_and_the_loop_works(
+    home: Path, sample_video: Path, local_whisper: Any, capsys: pytest.CaptureFixture[str]
+) -> None:
+    job, agent = prepared(capsys, sample_video)
+    assert agent.m["transcript"]["source"] == "asr" and agent.m["transcript"]["segments"] == 2
+    assert "Transcribed on this machine with small" in agent.m["transcript"]["note"]
+    assert len(local_whisper.instances) == 1
+    agent.write_all()
+    code, data, _ = cli(capsys, "assemble", job)
+    assert code == 0, data
+    md = Path(data["outputs"]["md"]).read_text(encoding="utf-8")
+    assert "transcript_source: asr" in md and "transcribe: small" in md
+    assert "Welcome to the Widget Frobnicator." in md  # the agent corrected the speech model
+    assert cli(capsys, "validate", data["outputs"]["md"])[0] == 0
+    # a later prepare (drill-down) must not transcribe again
+    assert cli(capsys, "prepare", "--job", job, "--dense", "--start", "6", "--end", "9")[0] == 0
+    assert len(local_whisper.instances) == 1
+
+
+def test_captions_win_over_local_transcription(
+    home: Path,
+    sample_video: Path,
+    srt: Path,
+    local_whisper: Any,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _, agent = prepared(capsys, sample_video, "--captions", str(srt))
+    assert agent.m["transcript"]["source"] == "captions" and local_whisper.instances == []
+
+
+def test_local_transcription_can_be_switched_off_or_missing(
+    home: Path,
+    sample_video: Path,
+    local_whisper: Any,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("FRAME_INGEST_AGENT_TRANSCRIBE", "false")
+    _, agent = prepared(capsys, sample_video)
+    assert agent.m["transcript"]["source"] == "none" and local_whisper.instances == []
+
+    monkeypatch.delenv("FRAME_INGEST_AGENT_TRANSCRIBE")
+    monkeypatch.setattr("frame_ingest.providers.faster_whisper.is_available", lambda: False)
+    _, agent = prepared(capsys, sample_video)
+    assert agent.m["transcript"]["source"] == "none"
+    assert ".[local]" in agent.m["transcript"]["note"]
+
+
+def test_a_silent_video_is_not_transcribed(
+    home: Path, silent_video: Path, local_whisper: Any, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _, agent = prepared(capsys, silent_video)
+    assert agent.m["transcript"]["source"] == "none" and local_whisper.instances == []
+    assert "no audio" in agent.m["transcript"]["note"]

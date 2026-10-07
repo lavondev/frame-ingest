@@ -432,7 +432,13 @@ async def _cmd_prepare(args: argparse.Namespace, config: AppConfig) -> Result:
     job = await _job_for(args, engine, _settings(args))
     captions = _resolve_input(args.captions, what="caption file") if args.captions else None
     manifest = await prepare_pack(
-        engine, job.id, captions=captions, start=args.start, end=args.end, dense=args.dense
+        engine,
+        job.id,
+        captions=captions,
+        start=args.start,
+        end=args.end,
+        dense=args.dense,
+        on_event=_progress,
     )
     transcript = manifest["transcript"]
     out_dir = manifest["directories"]["agent"] + "/manifest.json"

@@ -275,10 +275,12 @@ async def assemble_job(engine: Engine, job_id: str, *, metrics: bool = False) ->
             f"Job '{job.id}' has no evidence pack. Run prepare first.", code="not_prepared"
         )
     out_dir = agent_dir(job_dir) / "out"
-    captions = transcript.source in {"captions", "auto-captions"}
+    transcribed = transcript.source == "asr"
     settings = job.settings.model_copy(
         update={
-            "transcribe_model": transcript.source if captions else "none",
+            "transcribe_model": (transcript.model or transcript.source)
+            if transcript.source != "none"
+            else "none",
             "vision_model": "agent",
             "correct_model": "agent",
             "synthesize_model": "agent",
@@ -308,7 +310,7 @@ async def assemble_job(engine: Engine, job_id: str, *, metrics: bool = False) ->
         ctx.results = {
             StageName.TRANSCRIBE: TranscribeResult(
                 transcript=Transcript(
-                    model=transcript.source if captions else None,
+                    model=transcript.model if transcript.source != "none" else None,
                     timestamp_precision=transcript.timestamp_precision,
                     source=transcript.source,
                     segments=transcript.segments,
@@ -326,7 +328,11 @@ async def assemble_job(engine: Engine, job_id: str, *, metrics: bool = False) ->
         }
         ctx.ran = [StageName.PROBE, StageName.FRAMES, StageName.VISION]
         ctx.ran += [StageName.CORRECT, StageName.SYNTHESIZE, StageName.ASSEMBLE]
-        ctx.skipped = [StageName.AUDIO] + ([] if captions else [StageName.TRANSCRIBE])
+        if transcribed:
+            ctx.ran.insert(1, StageName.AUDIO)
+            ctx.ran.insert(2, StageName.TRANSCRIBE)
+        else:
+            ctx.skipped = [StageName.AUDIO, StageName.TRANSCRIBE]
         ctx.current_stage = StageName.ASSEMBLE
         res = await assemble_stage.run(ctx, mode="agent")
 
