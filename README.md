@@ -91,6 +91,7 @@ given or `egress: allow` is set. Prices for `--max-cost` go in `~/.frame-ingest/
 ## Documentation
 
 - [`docs/PLAN.md`](docs/PLAN.md): architecture, security model, roadmap and open decisions.
+- [`docs/TESTING.md`](docs/TESTING.md): a step-by-step guide to trying it by hand (CLI, Claude Code, Codex).
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md): why the pipeline works the way it does.
 - [`SECURITY.md`](SECURITY.md): how to report a vulnerability.
 - [`AGENTS.md`](AGENTS.md): instructions for coding agents working in this repository.
