@@ -8,6 +8,7 @@ semantic versioning (pre-1.0: minor versions may change the CLI).
 First tagged version. Everything below is new.
 
 ### Added
+- MIT license.
 - Pipeline ported from faircopy (probe, audio, transcribe, frames, vision, correct, synthesize,
   assemble) with a content-chained stage cache and resumable jobs.
 - CLI: `doctor`, `probe`, `estimate`, `run`, `fetch`, `prepare`, `assemble`, `validate`, `scan`,
@@ -25,4 +26,3 @@ First tagged version. Everything below is new.
 
 ### Known gaps
 - No real provider or harness has been exercised end to end; see docs/PLAN.md.
-- No LICENSE file yet (the owner has not chosen one).

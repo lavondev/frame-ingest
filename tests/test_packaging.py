@@ -47,6 +47,15 @@ def test_every_version_agrees() -> None:
     assert f'PIN="{py}"' in launcher  # the launcher fetches exactly this release, never "latest"
 
 
+def test_the_license_is_mit_everywhere() -> None:
+    text = (ROOT / "LICENSE").read_text(encoding="utf-8")
+    assert text.startswith("MIT License") and "Permission is hereby granted" in text
+    assert tomllib.loads((ROOT / "pyproject.toml").read_text())["project"]["license"] == "MIT"
+    assert json.loads((ROOT / "plugin.json").read_text())["license"] == "MIT"
+    assert json.loads((ROOT / ".claude-plugin/plugin.json").read_text())["license"] == "MIT"
+    assert yaml.safe_load((SKILL / "SKILL.md").read_text().split("---\n")[1])["license"] == "MIT"
+
+
 def test_manifests_name_the_same_plugin_and_skill() -> None:
     names = {
         json.loads((ROOT / ".claude-plugin/plugin.json").read_text())["name"],

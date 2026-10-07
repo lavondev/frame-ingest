@@ -291,7 +291,7 @@ argument-hint: <video file or URL>
 ## 10. Decisions for Jay
 
 1. **Name and repo.** ~~Decided 2026-10-06:~~ fresh repo `lavondev/frame-ingest`. Still open: whether to keep "Faircopy Markdown" as the name of the output format, and where the old app lives (suggestion: leave it in `lavondev/faircopy`, archived).
-2. **License.** Apache-2.0 (patent grant, common for tools) or MIT (simplest, matches claude-watch). Either works; pick before the first public commit.
+2. **License.** ~~Apache-2.0 or MIT~~ Decided: MIT (`LICENSE`).
 3. **Default egress.** ~~Suggestion~~ Implemented as suggested in M5 (`ask` interactively, `deny` otherwise); still the owner's call.
 4. **Scope of v0.1.** Suggestion: local files + agent mode + security core first, URL ingest in v0.2. This gets a safe, useful skill out sooner.
 5. **Viewer.** Keep the Next.js workspace as a separate optional package later, or retire it.

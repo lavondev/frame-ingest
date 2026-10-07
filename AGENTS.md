@@ -107,5 +107,6 @@ All four must pass before a commit.
 
 ## Open decisions
 
-See PLAN section 10 (license, default egress policy, scope of v0.1). Do not add a `LICENSE` file
-or change the egress default until the owner decides.
+The license is MIT (decided by the owner; see `LICENSE`). The egress default is `ask`
+interactively and `deny` otherwise (`egress:` in config); do not change it without the owner.
+See PLAN section 10 for the remaining open items.

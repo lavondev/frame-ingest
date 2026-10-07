@@ -1,5 +1,6 @@
 ---
 name: frame-ingest
+license: MIT
 description: Turns a video (local file or URL) into a structured, citable Markdown document with a corrected transcript, chapters, summaries, glossary and entity index. Use when the user gives a video, screen recording, lecture, talk or meeting recording and wants to understand, search, summarize, quote or cite it, or says "frame-ingest".
 compatibility: Pre-alpha. Needs the frame-ingest CLI (install with uv, see the repository README) and a video file or URL; page URLs need the url extra. Agent mode needs no API key.
 metadata:

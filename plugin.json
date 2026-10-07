@@ -6,6 +6,7 @@
   "author": { "name": "lavondev" },
   "homepage": "https://github.com/lavondev/frame-ingest",
   "repository": "https://github.com/lavondev/frame-ingest",
+  "license": "MIT",
   "keywords": ["video", "transcript", "markdown", "citations", "agent-skill"],
   "extensions": {
     "com.openai": {

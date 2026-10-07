@@ -104,4 +104,4 @@ uv run pytest && uv run ruff check . && uv run ruff format --check . && uv run m
 
 ## License
 
-To be decided before the first public release.
+MIT, see [`LICENSE`](LICENSE).
