@@ -1,0 +1,197 @@
+{
+  "$defs": {
+    "AgentChapter": {
+      "properties": {
+        "decisions_claims": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Decisions Claims",
+          "type": "array"
+        },
+        "end": {
+          "title": "End",
+          "type": "number"
+        },
+        "entities": {
+          "items": {
+            "$ref": "#/$defs/EntityOut"
+          },
+          "title": "Entities",
+          "type": "array"
+        },
+        "key_points": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Key Points",
+          "type": "array"
+        },
+        "quotes": {
+          "items": {
+            "$ref": "#/$defs/QuoteOut"
+          },
+          "title": "Quotes",
+          "type": "array"
+        },
+        "start": {
+          "title": "Start",
+          "type": "number"
+        },
+        "summary": {
+          "title": "Summary",
+          "type": "string"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        },
+        "visual_summary": {
+          "title": "Visual Summary",
+          "type": "string"
+        }
+      },
+      "required": [
+        "title",
+        "start",
+        "end",
+        "summary",
+        "key_points",
+        "quotes",
+        "entities",
+        "decisions_claims",
+        "visual_summary"
+      ],
+      "title": "AgentChapter",
+      "type": "object"
+    },
+    "EntityOut": {
+      "properties": {
+        "kind": {
+          "enum": [
+            "person",
+            "organization",
+            "product",
+            "technology",
+            "place",
+            "concept",
+            "other"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "kind"
+      ],
+      "title": "EntityOut",
+      "type": "object"
+    },
+    "GlossaryOut": {
+      "properties": {
+        "definition": {
+          "title": "Definition",
+          "type": "string"
+        },
+        "first_seen_s": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "First Seen S"
+        },
+        "term": {
+          "title": "Term",
+          "type": "string"
+        }
+      },
+      "required": [
+        "term",
+        "definition",
+        "first_seen_s"
+      ],
+      "title": "GlossaryOut",
+      "type": "object"
+    },
+    "QuoteOut": {
+      "properties": {
+        "t": {
+          "title": "T",
+          "type": "number"
+        },
+        "text": {
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "t",
+        "text"
+      ],
+      "title": "QuoteOut",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "abstract": {
+      "title": "Abstract",
+      "type": "string"
+    },
+    "chapters": {
+      "items": {
+        "$ref": "#/$defs/AgentChapter"
+      },
+      "title": "Chapters",
+      "type": "array"
+    },
+    "glossary": {
+      "items": {
+        "$ref": "#/$defs/GlossaryOut"
+      },
+      "title": "Glossary",
+      "type": "array"
+    },
+    "open_questions": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Open Questions",
+      "type": "array"
+    },
+    "tags": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Tags",
+      "type": "array"
+    },
+    "title": {
+      "title": "Title",
+      "type": "string"
+    },
+    "tldr": {
+      "title": "Tldr",
+      "type": "string"
+    }
+  },
+  "required": [
+    "title",
+    "tldr",
+    "abstract",
+    "glossary",
+    "open_questions",
+    "tags",
+    "chapters"
+  ],
+  "title": "AgentSynthesis",
+  "type": "object"
+}

@@ -1,0 +1,25 @@
+#!/bin/sh
+# Launcher for the frame-ingest CLI. Pre-alpha: it never downloads or installs anything.
+#   1. a `frame-ingest` already on PATH (uv tool install, pipx install)
+#   2. a checkout of the repository this skill lives in (uv run)
+# Otherwise it exits with 4 and tells the user how to install.
+set -eu
+
+if command -v frame-ingest >/dev/null 2>&1; then
+  exec frame-ingest "$@"
+fi
+
+here=$(cd "$(dirname "$0")" && pwd)
+repo=$(cd "$here/../../.." 2>/dev/null && pwd || true)
+if [ -n "$repo" ] && [ -f "$repo/pyproject.toml" ] && grep -q '^name = "frame-ingest"' "$repo/pyproject.toml" \
+   && command -v uv >/dev/null 2>&1; then
+  exec uv run --quiet --project "$repo" frame-ingest "$@"
+fi
+
+cat >&2 <<'MSG'
+error: the frame-ingest CLI is not installed.
+Install it from a checkout of the repository (needs uv: https://docs.astral.sh/uv/):
+    git clone https://github.com/lavondev/frame-ingest && cd frame-ingest && uv tool install .
+Then run the command again.
+MSG
+exit 4

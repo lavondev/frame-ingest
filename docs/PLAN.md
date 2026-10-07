@@ -1,6 +1,6 @@
 # frame-ingest — plan and architecture
 
-Status: draft v1, 2026-10-06. Written for hand-off to Claude Code. Repo scaffold is in place and milestones M0 (pipeline ported from faircopy) M1 (CLI skeleton) and M2 (security core) are done; next is M3 (URL ingest) or, per section 10 item 4, M4 (agent mode and the skill). The section 10 decisions other than the repo are still open.
+Status: draft v1, 2026-10-06. Written for hand-off to Claude Code. Repo scaffold is in place and milestones M0 (pipeline ported from faircopy) M1 (CLI skeleton), M2 (security core) and M4 (agent mode and the skill, minus the harness smoke tests) are done; next is M3 (URL ingest) or M5 (providers). The section 10 decisions other than the repo are still open.
 Source project: `faircopy` (lavondev/faircopy). Target: an open-source Agent Skill, `/frame-ingest <video file | URL>`, that works across coding-agent harnesses.
 
 ---
@@ -266,7 +266,7 @@ argument-hint: <video file or URL>
 
 **M3. URL ingest.** URL policy and pinned-IP fetcher, yt-dlp wrapper with version floor and post-run verification, captions parsing and dedupe, `fetch`. *Done when:* all SSRF/redirect/argument-injection fixtures pass and a public sample URL ingests end to end.
 
-**M4. Agent mode and the skill.** `prepare` (evidence pack, contact sheets, drill-down), JSON Schemas, `assemble` validators for agent outputs, `validate`, `scan`, SKILL.md and references. *Done when:* the same sample video yields a valid document through Claude Code **and** Codex, driven by the SKILL.md alone, with a scripted smoke test per harness (verify each harness's non-interactive mode).
+**M4. Agent mode and the skill.** *(Built 2026-10-06; harness smoke tests still to run.)* `prepare` (evidence pack, contact sheets, drill-down), JSON Schemas, `assemble` validators for agent outputs, `validate`, `scan`, SKILL.md and references. *Done when:* the same sample video yields a valid document through Claude Code **and** Codex, driven by the SKILL.md alone, with a scripted smoke test per harness (verify each harness's non-interactive mode). (Built and tested offline with a scripted stand-in agent through the public CLI: `tests/test_agent.py`. **Not yet done:** running the skill under real Claude Code and Codex. Deviations: with no ASR before M5 the transcript comes from `--captions file.srt|vtt` (or is empty); `scan` takes a job or a document; no subagent fan-out; `agents/openai.yaml` and the Codex plugin wait for M6, when the format can be verified; the launcher runs an installed `frame-ingest` or a repository checkout and downloads nothing until M6 pins a release.)
 
 **M5. Providers and profiles.** `openai_compat` (OpenAI, Groq, Ollama), `faster_whisper` extra, egress consent gate, `--offline`, cost caps. Run faircopy's never-exercised live-API paths against a real key once (`health --deep`) and fix drift. *Done when:* `--profile local` runs fully offline on a sample video, and `--profile cloud` shows an accurate egress summary before spending.
 

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import re
 from collections import defaultdict
+from typing import Literal
 
 import yaml
 
@@ -196,6 +197,9 @@ def render_markdown(a: Analysis) -> str:
         "chapter_count": len(chapters),
         "tags": [clean(t) for t in syn.tags],
         "trust": a.trust,
+        "mode": a.mode,
+        "transcript_source": a.transcript.source if segments else "none",
+        "timestamp_precision": a.transcript.timestamp_precision,
         "injection_flags": a.injection_flags,
     }
     out: list[str] = [
@@ -442,7 +446,9 @@ def build_analysis(ctx: PipelineContext) -> Analysis:
     )
 
 
-async def run(ctx: PipelineContext) -> AssembleResult:
+async def run(
+    ctx: PipelineContext, *, mode: Literal["pipeline", "agent"] = "pipeline"
+) -> AssembleResult:
     flags = scan_many(injection_sources(ctx))
     for kind, n in flags.items():
         ctx.warn(
@@ -451,6 +457,7 @@ async def run(ctx: PipelineContext) -> AssembleResult:
         )
     analysis = build_analysis(ctx)
     analysis.injection_flags = flags
+    analysis.mode = mode
     analysis.notes.warnings = ctx.all_warnings() + ctx.current_warnings()
     md = render_markdown(analysis)
     bad = check_timestamps(md, ctx.video.duration_s)

@@ -22,13 +22,17 @@ class ProfileUnavailable(FrameIngestError):
     status = 501
 
 
-def _fake_bundle() -> ProviderBundle:
+def fake_bundle() -> ProviderBundle:
     return ProviderBundle(transcriber=FakeTranscriber(), vision=FakeVision(), text=FakeText())
 
 
 def provider_factory(profile: str) -> ProviderFactory:
     if profile == "fake":
-        return _fake_bundle
+        return fake_bundle
+    if profile == "agent":
+        raise ProfileUnavailable(
+            "Profile 'agent' has no `run`: use `prepare`, write your outputs, then `assemble`."
+        )
     milestone = _AVAILABLE_IN.get(profile)
     if milestone is None:
         raise ProfileUnavailable(
@@ -44,6 +48,15 @@ def egress_summary(profile: str) -> dict[str, object]:
     """What a run with this profile would send off the machine. Computed, never contacted."""
     if profile == "fake":
         return {"network": False, "destinations": [], "note": "Fake providers; nothing is sent."}
+    if profile == "agent":
+        return {
+            "network": False,
+            "destinations": [],
+            "note": (
+                "The CLI sends nothing. In agent mode the frames and transcript you read are "
+                "sent to whatever model backs the host agent."
+            ),
+        }
     return {
         "network": True,
         "destinations": [],

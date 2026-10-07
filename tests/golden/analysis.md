@@ -16,6 +16,9 @@ tags:
 - tutorial
 - setup
 trust: untrusted-content
+mode: pipeline
+transcript_source: asr
+timestamp_precision: segment
 injection_flags: {}
 ---
 

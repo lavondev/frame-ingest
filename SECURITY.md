@@ -31,6 +31,10 @@ Implemented so far (local files only; there is no URL ingest yet):
   The scan is defence in depth, not a guarantee: a reader must still treat the document as data.
 - **Secrets** come from the environment only, are never written to outputs or logs (tested), and
   `.env` files are never read.
+- **Agent mode.** The agent's JSON outputs are schema-checked and guard-checked (exact frame and
+  segment id sets, verbatim quotes, contiguous chapters) before a document exists. Caption files
+  must be `.srt`/`.vtt`, regular, non-symlink and size-capped, and are parsed strictly. `validate`
+  and `scan` never echo file content. The skill pre-approves only its own launcher and `Read`.
 - **No network use** except the OpenAI-compatible provider client, and nothing runs against it
   yet (`--profile cloud` is not implemented).
 

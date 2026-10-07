@@ -13,9 +13,33 @@ It is built as an **Agent Skill plus a CLI**, so any coding agent that supports 
 - Local models: harnesses launched through Ollama work the same way, and a local profile can use
   Ollama for the vision and text stages.
 
-> **Status: pre-alpha.** The processing engine (M0), a first CLI (M1: `doctor`, `probe`,
-> `estimate`, `run`) and the security core (M2) work on local files with the offline `fake`
-> profile. URLs, real providers, agent mode and the skill come next. Follow progress in `docs/PLAN.md`.
+> **Status: pre-alpha.** Works on local files only. Agent mode (M4) is usable from a coding agent
+> today: no API key, you supply captions for the transcript. URLs (M3), real providers and
+> speech-to-text (M5) and packaging (M6) are not built yet. Follow progress in `docs/PLAN.md`.
+
+## Try it (pre-alpha)
+
+```bash
+git clone https://github.com/lavondev/frame-ingest && cd frame-ingest
+uv tool install .                 # puts `frame-ingest` on your PATH
+frame-ingest doctor
+```
+
+**With a coding agent (agent mode).** Copy or symlink `skills/frame-ingest/` into your agent's
+skills directory (for Claude Code: `~/.claude/skills/frame-ingest`), then ask it to
+`/frame-ingest path/to/video.mp4`. Add a caption file (`.srt` or `.vtt`) to get a transcript.
+The agent looks at contact sheets of frames, writes the analysis as JSON, and the CLI validates
+it and builds the document. Frames and transcript go to whichever model runs your agent.
+
+**By hand.**
+
+```bash
+frame-ingest prepare video.mp4 --captions video.srt   # evidence pack + manifest
+# ...write vision/*.json, corrections.json, synthesis.json under the reported output directory
+frame-ingest assemble <job_id>                        # validate, then write the document
+frame-ingest validate <document.md>
+frame-ingest run video.mp4 --profile fake             # offline demo with canned output
+``` Follow progress in `docs/PLAN.md`.
 
 ## What makes it different
 

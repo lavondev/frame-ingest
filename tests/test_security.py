@@ -492,29 +492,22 @@ def _options(parser: argparse.ArgumentParser) -> dict[str, set[str]]:
 
 # Reviewed flags. Adding one fails this test on purpose: decide that it cannot execute code,
 # write outside the job directory, reveal a secret or reach the network, then add it here.
+# Review notes for flags that touch the filesystem or take free text:
+#   --captions FILE   reads a user-named file, but only .srt/.vtt, regular, non-symlink, <= 5 MB,
+#                     parsed strictly (non-cue lines are dropped); its content is never echoed.
+#   --start/--end     floats, bounded by the video duration; extract frames inside the job dir.
+#   validate/scan     read a document path (regular, non-symlink, size-capped); messages carry
+#                     keys, line numbers and counts only, never file content.
+_INPUT = {"-h", "--help", "--json", "input", "--job", "--frame-cap", "--language"}
 REVIEWED_FLAGS = {
     "doctor": {"-h", "--help", "--json", "--online"},
     "probe": {"-h", "--help", "--json", "input"},
-    "estimate": {
-        "-h",
-        "--help",
-        "--json",
-        "input",
-        "--job",
-        "--frame-cap",
-        "--language",
-        "--profile",
-    },
-    "run": {
-        "-h",
-        "--help",
-        "--json",
-        "input",
-        "--job",
-        "--frame-cap",
-        "--language",
-        "--profile",
-    },
+    "estimate": {*_INPUT, "--profile"},
+    "run": {*_INPUT, "--profile"},
+    "prepare": {*_INPUT, "--captions", "--dense", "--start", "--end"},
+    "assemble": {"-h", "--help", "--json", "job"},
+    "validate": {"-h", "--help", "--json", "document"},
+    "scan": {"-h", "--help", "--json", "target"},
 }
 FORBIDDEN = re.compile(
     r"exec|cookie|shell|cmd|command|script|plugin|config|home|out(put)?$|dir|path|key|token|"

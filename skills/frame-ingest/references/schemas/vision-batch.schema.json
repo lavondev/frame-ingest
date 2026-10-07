@@ -1,0 +1,104 @@
+{
+  "$defs": {
+    "EntityOut": {
+      "properties": {
+        "kind": {
+          "enum": [
+            "person",
+            "organization",
+            "product",
+            "technology",
+            "place",
+            "concept",
+            "other"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "kind"
+      ],
+      "title": "EntityOut",
+      "type": "object"
+    },
+    "SceneType": {
+      "enum": [
+        "slide",
+        "screen_recording",
+        "talking_head",
+        "whiteboard",
+        "demo",
+        "diagram",
+        "chart",
+        "title_card",
+        "b_roll",
+        "other"
+      ],
+      "title": "SceneType",
+      "type": "string"
+    },
+    "VisionFrameOut": {
+      "properties": {
+        "change_from_previous": {
+          "title": "Change From Previous",
+          "type": "string"
+        },
+        "entities": {
+          "items": {
+            "$ref": "#/$defs/EntityOut"
+          },
+          "title": "Entities",
+          "type": "array"
+        },
+        "frame": {
+          "title": "Frame",
+          "type": "string"
+        },
+        "on_screen_text": {
+          "items": {
+            "type": "string"
+          },
+          "title": "On Screen Text",
+          "type": "array"
+        },
+        "scene_description": {
+          "title": "Scene Description",
+          "type": "string"
+        },
+        "scene_type": {
+          "$ref": "#/$defs/SceneType"
+        }
+      },
+      "required": [
+        "frame",
+        "scene_description",
+        "on_screen_text",
+        "change_from_previous",
+        "entities",
+        "scene_type"
+      ],
+      "title": "VisionFrameOut",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "frames": {
+      "items": {
+        "$ref": "#/$defs/VisionFrameOut"
+      },
+      "title": "Frames",
+      "type": "array"
+    }
+  },
+  "required": [
+    "frames"
+  ],
+  "title": "VisionBatchOut",
+  "type": "object"
+}
