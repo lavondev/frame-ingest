@@ -179,7 +179,7 @@ def task_card(engine: Engine, job_id: str, fi: str) -> dict[str, Any]:
     }
     if manifest is None:
         card["next"] = command(fi, "ingest", "--job", job.id)
-        card["todo"] = "Build the evidence pack: run `next`."
+        card["todo"] = "Build the evidence pack: run the command in `next`."
         return card
 
     card["coverage"] = manifest.get("coverage")
@@ -222,18 +222,23 @@ def task_card(engine: Engine, job_id: str, fi: str) -> dict[str, Any]:
             card["next"] = command(fi, "check", pending["file"])
             card["todo"] = (
                 f"Fill {pending['file']} (and every other file under `fill` that is not ok), "
-                "then run `next` to check it."
+                "then run the command in `next` to check it."
             )
         else:  # only cross-file problems (e.g. frames no file analyses)
             card["next"] = command(fi, "check", job.id)
-            card["todo"] = "Fix the problems listed under `problems`, then run `next`."
+            card["todo"] = (
+                "Fix the problems listed under `problems`, then run the command in `next`."
+            )
         return card
 
     md = document_is_current(engine, job)
     if md is None:
         card["state"] = "finish"
         card["next"] = command(fi, "finish", job.id)
-        card["todo"] = "Every file checks ok: run `next` to build, validate and scan the document."
+        card["todo"] = (
+            "Every file checks ok: run the command in `next` to build, validate and scan the "
+            "document."
+        )
         return card
     card["state"] = "done"
     card["next"] = None

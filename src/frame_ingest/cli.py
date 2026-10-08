@@ -624,7 +624,6 @@ async def _cmd_ingest(args: argparse.Namespace, config: AppConfig) -> Result:
         "sheets": len(manifest["sheets"]),
         "duration_s": est.duration_s,
     }
-    card["doctor_warnings"] = report.warnings
     return _card_result(card)
 
 
