@@ -17,6 +17,7 @@
 # frame_cap: 100
 # scene_threshold: 0.30
 # min_interval_s: 10
+# still_min_s: 2                # still stretch that counts as a new screen (0 = off)
 # max_image_px: 1024
 # vision_batch_size: 8
 # api_concurrency: 4

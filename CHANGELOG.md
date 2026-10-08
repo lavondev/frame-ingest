@@ -28,6 +28,12 @@ The hardened agent mode (`docs/HARDENED-ARCHITECTURE.md`).
 - Tests no longer download a real speech model.
 
 ### Fixed
+- Frame selection now keeps one frame per slide when slides or screen recordings change only
+  their text: still-screen detection (`freezedetect`, config `still_min_s`, `still_noise_db`)
+  runs in the scene-detection pass, a frame is taken near the end when the last stretch is longer
+  than the coverage interval, and the pHash dedupe checks a grayscale pixel difference on
+  screen-like frames before dropping one (`dedupe_pixel_fraction`). Frames are re-selected for
+  existing jobs.
 - The skill told agents to type `${CLAUDE_SKILL_DIR}/scripts/fi`, which ran `/scripts/fi` (exit
   127) where the variable was empty.
 - An empty transcript no longer lets a run continue quietly from frames alone.

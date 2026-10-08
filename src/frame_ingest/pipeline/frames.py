@@ -1,8 +1,12 @@
 """Stage 4: frame selection.
 
 Scene-change detection (ffmpeg select='gt(scene,X)' + showinfo timestamps) proposes frames at
-cuts; a coverage interval adds frames to static stretches; frames are downscaled JPEGs deduped
-by perceptual hash and capped (evenly, never dropping the first frame).
+cuts. Slides and screen recordings often change only their text, which the scene score misses, so
+the same ffmpeg pass runs `freezedetect`: every still stretch that starts after the picture
+changed is a new screen and gets a frame too. A coverage interval adds frames to long stretches
+(and one near the end); frames are downscaled JPEGs deduped by perceptual hash (confirmed by a
+pixel difference on screen-like frames, where pHash cannot see a changed line of text) and capped
+(evenly, never dropping the first frame).
 """
 
 from __future__ import annotations
@@ -24,17 +28,23 @@ from frame_ingest.pipeline.timefmt import FRAME_NAME_RE, frame_filename
 from frame_ingest.pipeline.util import run_units
 
 NAME = StageName.FRAMES
-VERSION = 1
+VERSION = 2  # 2: still-screen cuts, end-of-video frame, pixel-checked dedupe
 DEPS: list[StageName] = [StageName.PROBE]
 
 _SCORE_RE = re.compile(r"lavfi\.scene_score=([0-9.]+)")
 _PTS_RE = re.compile(r"showinfo.*?pts_time:\s*([0-9.]+)")
+_FREEZE_RE = re.compile(r"lavfi\.freezedetect\.freeze_start:\s*([0-9.]+)")
+_CACHE_VERSION = 2
+MERGE_WINDOW_S = 1.0  # cuts closer than this are one change
+SIG_SIZE = (160, 90)  # grayscale thumbnail for the pixel check
+SIG_LEVEL = 32  # a pixel "changed" when it moved more than this many gray levels
 Reason = Literal["first", "scene", "interval"]
 
 
 class SceneCut(BaseModel):
     t: float
     score: float | None = None
+    kind: Literal["scene", "still"] = "scene"  # still: a new still screen (freezedetect)
 
 
 @dataclass
@@ -54,10 +64,16 @@ class FramesResult(StageResult):
 # ── scene detection ─────────────────────────────────────────────────────────
 def parse_scene_output(stderr: str) -> list[SceneCut]:
     """The select filter reports each cut as a showinfo line; metadata=print puts the score on
-    the line just before it."""
+    the line just before it. freezedetect logs where each still stretch starts; one that starts
+    at the very beginning or next to a scene cut adds nothing and is dropped."""
     cuts: list[SceneCut] = []
+    stills: list[float] = []
     score: float | None = None
     for line in stderr.splitlines():
+        fm = _FREEZE_RE.search(line)
+        if fm:
+            stills.append(float(fm.group(1)))
+            continue
         sm = _SCORE_RE.search(line)
         if sm:
             score = float(sm.group(1))
@@ -66,21 +82,36 @@ def parse_scene_output(stderr: str) -> list[SceneCut]:
         if pm and "n:" in line:
             cuts.append(SceneCut(t=float(pm.group(1)), score=score))
             score = None
-    return cuts
+    scene_ts = [c.t for c in cuts]
+    for t in stills:
+        if t >= MERGE_WINDOW_S and all(abs(t - s) >= MERGE_WINDOW_S for s in scene_ts):
+            cuts.append(SceneCut(t=t, kind="still"))
+    return sorted(cuts, key=lambda c: c.t)
 
 
-async def detect_scenes(job_dir: Path, video_path: Path, threshold: float) -> list[SceneCut]:
-    """Free, local. Cached per threshold in frames/scenecuts.json (shared with /estimate)."""
+async def detect_scenes(
+    job_dir: Path,
+    video_path: Path,
+    threshold: float,
+    *,
+    still_min_s: float = 0.0,
+    still_noise_db: float = -66.0,
+) -> list[SceneCut]:
+    """Free, local. Cached per setting in frames/scenecuts.json (shared with /estimate).
+    `still_min_s` > 0 also reports still stretches at least that long (see the module doc)."""
     cache = job_dir / "frames" / "scenecuts.json"
+    key = {"v": _CACHE_VERSION, "threshold": threshold, "still": [still_min_s, still_noise_db]}
     if cache.is_file():
         try:
             data = json.loads(cache.read_text(encoding="utf-8"))
-            if data.get("threshold") == threshold:
+            if all(data.get(k) == v for k, v in key.items()):
                 return [SceneCut.model_validate(c) for c in data["cuts"]]
         except (ValueError, KeyError):
             pass
+    still = f"freezedetect=n={still_noise_db:g}dB:d={still_min_s:g}," if still_min_s > 0 else ""
     vf = (
-        f"scale=320:-2,select='gt(scene,{threshold})',metadata=print:key=lavfi.scene_score,showinfo"
+        f"scale=320:-2,{still}select='gt(scene,{threshold})',"
+        "metadata=print:key=lavfi.scene_score,showinfo"
     )
     res = await run_ffmpeg(
         ["-i", str(video_path), "-an", "-sn", "-vf", vf, "-f", "null", "-"],
@@ -90,7 +121,7 @@ async def detect_scenes(job_dir: Path, video_path: Path, threshold: float) -> li
     cuts = parse_scene_output(res.stderr)
     cache.parent.mkdir(parents=True, exist_ok=True)
     cache.write_text(
-        json.dumps({"threshold": threshold, "cuts": [c.model_dump() for c in cuts]}),
+        json.dumps({**key, "cuts": [c.model_dump() for c in cuts]}),
         encoding="utf-8",
     )
     return cuts
@@ -101,14 +132,16 @@ def plan_candidates(
     duration: float, cuts: list[SceneCut], min_interval: float, settle: float = 0.15
 ) -> list[Candidate]:
     """First frame + one frame just after every scene cut (cuts closer than 1 s collapse) +
-    interval frames wherever the gap between neighbours exceeds `min_interval`."""
+    interval frames wherever the gap between neighbours exceeds `min_interval` + one frame near
+    the end when the last stretch is longer than `min_interval` (the end has no neighbour that
+    would cover it)."""
     if duration <= 0:
         return []
     last_t = max(0.0, duration - 0.1)
     cands = [Candidate(min(0.5, duration / 4), "first")]
     for cut in sorted(cuts, key=lambda c: c.t):
-        t = min(cut.t + settle, last_t)
-        if t - cands[-1].t >= 1.0:
+        t = round(min(cut.t + settle, last_t), 3)
+        if t - cands[-1].t >= MERGE_WINDOW_S:
             cands.append(Candidate(t, "scene", cut.score))
     filled: list[Candidate] = []
     bounds = [*cands[1:], None]
@@ -123,6 +156,9 @@ def plan_candidates(
         if nxt:
             filled.append(nxt)
             cur = nxt
+    end_t = duration - 0.5
+    if end_t - filled[-1].t >= min_interval:
+        filled.append(Candidate(end_t, "interval"))
     return filled
 
 
@@ -152,17 +188,53 @@ def thin_to_cap(items: list[Candidate], cap: int, duration: float) -> list[Candi
     return items
 
 
+@dataclass
+class Signature:
+    """What the dedupe compares: a perceptual hash and a small grayscale thumbnail."""
+
+    phash: imagehash.ImageHash
+    gray: bytes | None = None  # SIG_SIZE luma, only kept for screen-like frames
+
+
+def signature(im: Image.Image) -> Signature:
+    gray = im.convert("L").resize(SIG_SIZE, Image.Resampling.BOX)
+    return Signature(imagehash.phash(im), gray.tobytes() if is_screen_like(gray) else None)
+
+
+def is_screen_like(gray: Image.Image) -> bool:
+    """Slides and screen recordings sit on a flat background: at least 40% of the thumbnail
+    within a few gray levels of its most common value. Camera footage rarely does."""
+    hist = gray.histogram()
+    peak = max(range(256), key=hist.__getitem__)
+    return sum(hist[max(0, peak - 4) : peak + 5]) >= 0.4 * sum(hist)
+
+
+def changed_fraction(a: bytes, b: bytes) -> float:
+    """Share of thumbnail pixels that moved more than SIG_LEVEL gray levels."""
+    if len(a) != len(b) or not a:
+        return 1.0
+    return sum(1 for x, y in zip(a, b, strict=True) if abs(x - y) > SIG_LEVEL) / len(a)
+
+
 def dedupe_hashes(hashes: list[imagehash.ImageHash], distance: int) -> list[bool]:
+    """Keep-mask by perceptual hash alone (see `dedupe_frames`)."""
+    return dedupe_frames([Signature(h) for h in hashes], distance)
+
+
+def dedupe_frames(sigs: list[Signature], distance: int, pixel_fraction: float = 0.0) -> list[bool]:
     """Keep-mask: a frame is dropped when its perceptual hash is within `distance` bits of the
-    previously kept frame (static scenes / false cuts)."""
+    previously kept frame (static scenes / false cuts). pHash barely moves when only some text
+    changes, so when both frames are screen-like a frame must also have fewer than
+    `pixel_fraction` changed thumbnail pixels to count as a duplicate (0: pHash alone)."""
     keep: list[bool] = []
-    last: imagehash.ImageHash | None = None
-    for h in hashes:
-        if last is not None and (h - last) <= distance:
-            keep.append(False)
-        else:
-            keep.append(True)
-            last = h
+    last: Signature | None = None
+    for sig in sigs:
+        dup = last is not None and (sig.phash - last.phash) <= distance
+        if dup and pixel_fraction > 0 and last and last.gray and sig.gray:
+            dup = changed_fraction(sig.gray, last.gray) < pixel_fraction
+        keep.append(not dup)
+        if not dup:
+            last = sig
     return keep
 
 
@@ -202,6 +274,8 @@ def key_params(ctx: PipelineContext) -> dict[str, object]:
         "cap": s.frame_cap,
         "max_px": c.max_image_px,
         "dedupe": c.dedupe_hash_distance,
+        "dedupe_px": c.dedupe_pixel_fraction,
+        "still": [c.still_min_s, c.still_noise_db],
     }
 
 
@@ -223,7 +297,13 @@ async def run(ctx: PipelineContext) -> FramesResult:
             old.unlink(missing_ok=True)
 
     ctx.progress(0, 1, "Detecting scene changes")
-    cuts = await detect_scenes(ctx.job_dir, ctx.video_path, s.scene_threshold)
+    cuts = await detect_scenes(
+        ctx.job_dir,
+        ctx.video_path,
+        s.scene_threshold,
+        still_min_s=cfg.still_min_s,
+        still_noise_db=cfg.still_noise_db,
+    )
     ctx.log(f"{len(cuts)} scene change(s) detected")
 
     duration = ctx.video.duration_s
@@ -253,13 +333,13 @@ async def run(ctx: PipelineContext) -> FramesResult:
         ctx.warn("no_frames", "No frames could be extracted from this video.")
         return FramesResult(candidates=n_cands, scene_cuts=len(cuts))
 
-    hashes = []
+    sigs: list[Signature] = []
     dims: list[tuple[int, int]] = []
     for _, p in usable:
         with Image.open(p) as im:
-            hashes.append(imagehash.phash(im))
+            sigs.append(signature(im))
             dims.append(im.size)
-    keep = dedupe_hashes(hashes, cfg.dedupe_hash_distance)
+    keep = dedupe_frames(sigs, cfg.dedupe_hash_distance, cfg.dedupe_pixel_fraction)
     keep[0] = True
     kept = [(c, p, d) for (c, p), d, k in zip(usable, dims, keep, strict=True) if k]
     for (_, p), k in zip(usable, keep, strict=True):

@@ -29,7 +29,13 @@ async def build_estimate(
     pricing: Pricing,
 ) -> Estimate:
     d = video.duration_s
-    cuts = await detect_scenes(job_dir, video_path, settings.scene_threshold)
+    cuts = await detect_scenes(
+        job_dir,
+        video_path,
+        settings.scene_threshold,
+        still_min_s=config.still_min_s,
+        still_noise_db=config.still_noise_db,
+    )
     cands = plan_candidates(d, cuts, settings.min_interval_s)
     frames = min(len(cands), settings.frame_cap)
 
