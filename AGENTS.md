@@ -48,6 +48,10 @@ Supabase sync and `.env` loading were dropped. Design rationale: `docs/ARCHITECT
   silent, else `needs_decision`, exit 6; state in `agent/audio.json`); `agent/templates.py`
   writes the prefilled `TODO:` templates; `agent/checks.py` holds the per-file validators that
   both `assemble` and `check` (`agent/check.py`) use. Never add a second set of validators.
+  `agent/flow.py` is the state machine behind `ingest` / `next` / `finish` (task card,
+  `fi_path` from the launcher's `FRAME_INGEST_LAUNCHER`, shell-quoted next commands). Job ids
+  are the first 12 hex digits of the content sha256 (`engine.create_or_reuse`), so every
+  command sees the same job for the same video.
 - M3/M7/M8 additions: `fetch/` (`policy.py` URL policy, `http.py` pinned-IP fetcher, `ytdlp.py` +
   `guard/ytdlp_args.py` hardened yt-dlp, `proxy.py` connect-time egress guard, `acquire.py` URL to
   local file); `guard/sandbox.py` (OS sandbox for ffmpeg, config `sandbox`); `export.py`

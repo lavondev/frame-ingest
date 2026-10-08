@@ -56,6 +56,12 @@ class FrameRegistry(BaseModel):
     frames: list[FrameInfo] = Field(default_factory=list)
     scene_cuts: int = 0
     warnings: list[ProcessingWarning] = Field(default_factory=list)
+    selected_with: str = ""  # the frame settings used; frames are re-selected if they change
+
+
+def frame_settings(job: Job) -> str:
+    s = job.settings
+    return f"cap={s.frame_cap} scene={s.scene_threshold} interval={s.min_interval_s}"
 
 
 def load_registry(job_dir: Path) -> FrameRegistry | None:
@@ -72,7 +78,12 @@ async def _select_frames(engine: Engine, job: Job) -> FrameRegistry:
     ctx = agent_context(engine, job)
     res = await frames_stage.run(ctx)
     warnings, _, _ = ctx.drain()
-    return FrameRegistry(frames=res.frames, scene_cuts=res.scene_cuts, warnings=warnings)
+    return FrameRegistry(
+        frames=res.frames,
+        scene_cuts=res.scene_cuts,
+        warnings=warnings,
+        selected_with=frame_settings(job),
+    )
 
 
 async def _drill(
@@ -165,7 +176,7 @@ async def prepare(
         (adir / "out" / "vision").mkdir(parents=True, exist_ok=True)
 
         registry = load_registry(job_dir)
-        if registry is None:
+        if registry is None or registry.selected_with not in ("", frame_settings(job)):
             registry = await _select_frames(engine, job)
         drilled = 0
         if dense:

@@ -322,7 +322,9 @@ def test_fetch_allow_playlist_makes_one_job_per_valid_entry(
         "2",
     )
     assert code == 0 and [bool(i.get("job_id")) for i in out["items"]] == [True, True]
-    assert len(list((home / "jobs").iterdir())) == 2
+    # both entries serve the same bytes here, and a job is keyed by content: one job, reused
+    assert out["items"][0]["job_id"] == out["items"][1]["job_id"]
+    assert len(list((home / "jobs").iterdir())) == 1
     assert all("?" not in i["url"] for i in out["items"])
 
 

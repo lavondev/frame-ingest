@@ -47,6 +47,8 @@ def _matches(pattern: re.Pattern[str]) -> Callable[[str], bool]:
 
 
 def _filter_ok(value: str) -> bool:
+    if value.startswith("-"):  # an option, not a filter graph (found by tests/test_fuzz.py)
+        return False
     return _FILTER_CHARS.match(value) is not None and _FILTER_DENY.search(value) is None
 
 

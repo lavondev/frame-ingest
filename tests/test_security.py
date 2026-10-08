@@ -551,6 +551,18 @@ REVIEWED_FLAGS = {
     "validate": {"-h", "--help", "--json", "document"},
     "scan": {"-h", "--help", "--json", "target"},
     "check": {"-h", "--help", "--json", "target"},
+    "ingest": {
+        *_INPUT,
+        "--captions",
+        "--dense",
+        "--start",
+        "--end",
+        "--allow-frames-only",
+        "--cloud-speech",
+        "--allow-egress",
+    },
+    "next": {"-h", "--help", "--json", "job"},
+    "finish": {"-h", "--help", "--json", "job", "--metrics"},
 }
 FORBIDDEN = re.compile(
     r"exec|cookie|shell|cmd|command|script|plugin|config|home|out(put)?$|dir|path|key|token|"

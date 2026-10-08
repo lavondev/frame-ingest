@@ -62,6 +62,7 @@ class AudioStatus(BaseModel):
     message: str = ""
     loudness: Loudness | None = None
     attempts: list[Attempt] = Field(default_factory=list)
+    language: str | None = None  # the language hint speech-to-text ran with
 
 
 def load_status(job_dir: Path) -> AudioStatus | None:
@@ -231,7 +232,9 @@ async def resolve_transcript(
             model="captions", timestamp_precision="segment", source="captions", segments=segs
         )
         return tr, AudioStatus(status="ok", audio_track=track, method="captions")
-    if previous is not None and previous.segments and cloud_gate is None:
+    stale = prev is not None and prev.method in ("local", "cloud")
+    stale = stale and prev is not None and prev.language != job.settings.language
+    if previous is not None and previous.segments and cloud_gate is None and not stale:
         return previous, prev or AudioStatus(
             status="ok", audio_track=track, method=_method_of(previous)
         )
@@ -254,14 +257,19 @@ async def resolve_transcript(
             message="The video has no audio track, so there is nothing to transcribe.",
         )
 
-    status = AudioStatus(status="needs_decision", audio_track=True)
+    status = AudioStatus(status="needs_decision", audio_track=True, language=job.settings.language)
     transcript: Transcript | None = None
     if cloud_gate is not None:
         transcript = await _cloud(engine, job, emit, cloud_gate, status)
         if transcript is None:
             status.reason = "no_speech_found"
             status.message = "Cloud speech-to-text returned no speech for this audio track."
-    elif prev is not None and prev.status == "needs_decision" and prev.reason == "no_speech_found":
+    elif (
+        prev is not None
+        and prev.status == "needs_decision"
+        and prev.reason == "no_speech_found"
+        and not stale
+    ):
         status = prev  # the same attempts would give the same answer; do not repeat them
     elif not cfg.agent_transcribe:
         status.reason = "transcription_disabled"

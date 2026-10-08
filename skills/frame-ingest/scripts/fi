@@ -12,6 +12,11 @@ set -eu
 EXTRAS=${FRAME_INGEST_EXTRAS-"--extra local --extra url"}
 
 here=$(cd "$(dirname "$0")" && pwd -P)
+# The absolute path of this launcher as invoked (symlinks kept, so it stays inside the skill
+# directory that harness permissions name). `fi ingest` hands it back as `fi_path`, and the agent
+# reuses that exact string instead of typing a shell variable.
+FRAME_INGEST_LAUNCHER="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
+export FRAME_INGEST_LAUNCHER
 repo=$(cd "$here/../../.." 2>/dev/null && pwd -P || true)
 if [ -n "$repo" ] && [ -f "$repo/pyproject.toml" ] && grep -q '^name = "frame-ingest"' "$repo/pyproject.toml" \
    && command -v uv >/dev/null 2>&1; then

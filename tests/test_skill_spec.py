@@ -244,3 +244,41 @@ def test_install_script_links_the_skill_for_claude_and_codex_and_is_safe(tmp_pat
     res = run()
     assert res.returncode == 0 and "skipped" in res.stderr
     assert (home / ".claude" / "skills" / "frame-ingest" / "mine.txt").read_text() == "keep"
+
+
+def test_ingest_through_the_launcher_returns_the_launcher_path_to_reuse(
+    tmp_path: Path, silent_video: Path
+) -> None:
+    """The exit-127 bug: the agent typed `${CLAUDE_SKILL_DIR}/scripts/fi` into a shell where the
+    variable was empty. Now `ingest` returns `fi_path`, the launcher's absolute path as invoked
+    (symlinks kept, so it matches the skill directory the harness knows), to reuse verbatim."""
+    import json
+
+    uv = shutil.which("uv")
+    if uv is None:
+        pytest.skip("uv not installed")
+    skills = tmp_path / "agent skills"
+    skills.mkdir()
+    (skills / "frame-ingest").symlink_to(FI_DIR)
+    launcher = skills / "frame-ingest" / "scripts" / "fi"
+    env = {
+        **{k: v for k, v in os.environ.items() if not k.startswith("FRAME_INGEST_")},
+        "PATH": f"{Path(uv).parent}:/usr/bin:/bin",
+        "UV_OFFLINE": "1",
+        "FRAME_INGEST_EXTRAS": "",
+        "FRAME_INGEST_HOME": str(tmp_path / "home"),
+    }
+    res = subprocess.run(
+        [str(launcher), "ingest", "-", "--json"],
+        input=str(silent_video),
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=180,
+        cwd=tmp_path,
+    )
+    assert res.returncode == 0, res.stderr
+    card = json.loads(res.stdout)
+    assert card["fi_path"] == str(launcher) and card["state"] == "fill"
+    assert card["next"].startswith(f"'{launcher}' check ")

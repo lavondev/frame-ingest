@@ -9,7 +9,6 @@ from __future__ import annotations
 import json
 import os
 import re
-import secrets
 import shutil
 import tempfile
 from pathlib import Path
@@ -75,10 +74,6 @@ class JobStore:
         self.root.mkdir(parents=True, exist_ok=True)
 
     # -- ids & paths ----------------------------------------------------------------------
-    @staticmethod
-    def new_id() -> str:
-        return secrets.token_hex(6)
-
     def dir(self, job_id: str) -> Path:
         if not JOB_ID_RE.match(job_id):
             raise JobNotFound(job_id)

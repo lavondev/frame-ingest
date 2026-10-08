@@ -461,7 +461,7 @@ def check_timestamps(md: str, duration: float) -> list[str]:
 
 # ── stage ───────────────────────────────────────────────────────────────────
 def key_params(ctx: PipelineContext) -> dict[str, object]:
-    return {"v": VERSION}
+    return {"v": VERSION, "metrics": ctx.metrics}  # a job is reused, so the flag must count
 
 
 def skip_reason(ctx: PipelineContext) -> str | None:

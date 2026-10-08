@@ -24,7 +24,9 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import os
 import re
+import shutil
 import sys
 from collections.abc import Sequence
 from contextlib import nullcontext
@@ -37,6 +39,8 @@ from pydantic import ValidationError
 from frame_ingest import __version__
 from frame_ingest.agent.assemble_agent import ValidationFailed, assemble_job
 from frame_ingest.agent.check import CheckRefused, check_file, check_job
+from frame_ingest.agent.flow import finish as finish_job
+from frame_ingest.agent.flow import task_card
 from frame_ingest.agent.prepare import prepare as prepare_pack
 from frame_ingest.agent.validate_doc import (
     read_document,
@@ -212,14 +216,15 @@ async def _cmd_probe(args: argparse.Namespace, config: AppConfig) -> Result:
     # ffmpeg only ever sees a file inside a job directory (AGENTS.md rule 4), so probing makes a
     # private copy there (downloading first for a URL) and removes it afterwards.
     engine = _engine(config)
-    job = await _create_from(args.input, engine, None, None, False)
+    job, created = await _acquire(args.input, engine, None, None, False)
     try:
         video = job.video
         if video is None:  # pragma: no cover - create() always probes
             raise MediaError("The file could not be probed.")
         info = video.model_dump(mode="json")
     finally:
-        engine.delete(job.id)
+        if created:  # a job that already existed is someone's work: leave it alone
+            engine.delete(job.id)
     lines = [
         f"{info['filename']}: {info['duration_s']:.1f}s, "
         f"{info.get('width') or '?'}x{info.get('height') or '?'}, "
@@ -264,22 +269,30 @@ def _stdin_or(raw: str) -> str:
 async def _create_from(
     raw: str, engine: Engine, settings: JobSettings | None, profile: str | None, offline: bool
 ) -> Job:
-    """A new job from a local file or a URL (downloaded first, into a private directory)."""
+    job, _ = await _acquire(raw, engine, settings, profile, offline)
+    return job
+
+
+async def _acquire(
+    raw: str, engine: Engine, settings: JobSettings | None, profile: str | None, offline: bool
+) -> tuple[Job, bool]:
+    """The job for a local file or a URL (downloaded first, into a private directory), and
+    whether it is new. The same content always maps to the same job."""
     value = _stdin_or(raw)
     if not _URL_RE.match(value):
-        return await engine.create(_resolve_input(value), settings, profile=profile)
+        return await engine.create_or_reuse(_resolve_input(value), settings, profile=profile)
     if offline:
         raise EgressDenied("--offline forbids downloading a URL.")
     acquired = await fetch_url(value, engine.config)
     print(f"downloaded from {acquired.source_url}", file=sys.stderr)
     try:
-        job = await engine.create(
+        job, created = await engine.create_or_reuse(
             acquired.path, settings, profile=profile, source_url=acquired.source_url, move=True
         )
         attach_captions(engine.store.dir(job.id), acquired)
     finally:
         acquired.cleanup()
-    return job
+    return job, created
 
 
 class _Usage(Exception):
@@ -540,6 +553,83 @@ def _problem_lines(problems: list[dict[str, str]], indent: str) -> list[str]:
     return [f"{indent}{p['file']} {p['path']}: {p['message']} [{p['rule']}]" for p in problems]
 
 
+def fi_path() -> str:
+    """The command an agent should reuse verbatim to call this CLI again.
+
+    The skill's launcher exports its own absolute path (not resolving symlinks, so it stays
+    inside the skill directory that harness permissions name); otherwise this program's path."""
+    raw = os.environ.get("FRAME_INGEST_LAUNCHER", "")
+    if (
+        os.path.isabs(raw)
+        and os.path.basename(raw) == "fi"
+        and os.path.isfile(raw)
+        and not any(ch in raw for ch in "\n\r\x00")
+    ):
+        return raw
+    argv0 = sys.argv[0] if sys.argv else ""
+    if os.path.isabs(argv0) and os.path.basename(argv0) == "frame-ingest":
+        return argv0
+    return shutil.which("frame-ingest") or "frame-ingest"
+
+
+async def _cmd_ingest(args: argparse.Namespace, config: AppConfig) -> Result:
+    """doctor + estimate + probe + transcribe + frames + sheets + templates, in one call."""
+    memo = CapabilityMemo(config.data_root / "capabilities.json")
+    report = await run_doctor(config, memo, online=False)
+    if not report.ok:
+        failed = [c for c in report.checks if not c.ok]
+        message = "; ".join(c.message for c in failed)
+        payload = {
+            "ok": False,
+            "state": "doctor",
+            "error": {"code": "doctor_failed", "message": message},
+            "report": report_dict(report),
+        }
+        lines = [f"FAIL {c.name}: {c.message}" for c in failed]
+        return Result(payload, lines, EXIT_UNAVAILABLE, error=message)
+    engine = _engine(config)
+    job = await _job_for(args, engine, _settings(args))
+    est = await engine.estimate(job.id)
+    manifest = await _prepare_job(args, engine, job)
+    card = task_card(engine, job.id, fi_path())
+    card["estimate"] = {
+        "frames": len(manifest["frames"]),
+        "sheets": len(manifest["sheets"]),
+        "duration_s": est.duration_s,
+    }
+    card["doctor_warnings"] = report.warnings
+    return _card_result(card)
+
+
+async def _cmd_next(args: argparse.Namespace, config: AppConfig) -> Result:
+    return _card_result(task_card(_engine(config), args.job, fi_path()))
+
+
+async def _cmd_finish(args: argparse.Namespace, config: AppConfig) -> Result:
+    res = await finish_job(_engine(config), args.job, fi_path(), metrics=args.metrics)
+    if res["state"] == "fill":
+        lines = [*_problem_lines(res["problems"], ""), f"next: {res['next']}"]
+        return Result(res, lines, EXIT_FAILED, error="validation_failed")
+    lines = [f"document: {res['document']}", res["coverage_line"] or ""]
+    lines += [f"  {c['index']}. {c['title']} [{c['start']} - {c['end']}]" for c in res["chapters"]]
+    if res["scan"]["flags"]:
+        lines.append(f"scan flags: {res['scan']['flags']}")
+    lines += [f"invalid: {i['message']}" for i in res["validate"]["issues"]]
+    return Result(res, lines, EXIT_OK if res["ok"] else EXIT_FAILED)
+
+
+def _card_result(card: dict[str, Any]) -> Result:
+    lines = [f"job {card['job_id']}: {card['state']}", card.get("todo") or ""]
+    if card["state"] == "needs_decision":
+        lines += _decision_lines(card["decision"])
+    for row in card.get("fill", []):
+        lines.append(f"  {row['status']:<10} {row['file']} ({row['todo']} TODO)")
+    if card.get("next"):
+        lines.append(f"next: {card['next']}")
+    code = EXIT_DECISION if card["state"] == "needs_decision" else EXIT_OK
+    return Result(card, lines, code)
+
+
 async def _cmd_check(args: argparse.Namespace, config: AppConfig) -> Result:
     engine = _engine(config)
     target = _stdin_or(args.target)
@@ -605,6 +695,9 @@ async def _cmd_scan(args: argparse.Namespace, config: AppConfig) -> Result:
 
 
 _HANDLERS = {
+    "ingest": _cmd_ingest,
+    "next": _cmd_next,
+    "finish": _cmd_finish,
     "check": _cmd_check,
     "export": _cmd_export,
     "fetch": _cmd_fetch,
@@ -735,6 +828,26 @@ def build_parser() -> argparse.ArgumentParser:
     )
     run.add_argument(
         "--max-cost", type=float, metavar="USD", help="refuse or stop above this dollar amount"
+    )
+
+    ingest = subs.add_parser(
+        "ingest",
+        help="agent mode, one call: check, probe, transcribe, frames, sheets and templates; "
+        "returns a task card with the next command",
+    )
+    _add_common(ingest)
+    _add_input(ingest, profile=False)
+    _add_prepare(ingest)
+
+    next_ = subs.add_parser("next", help="agent mode: where a job stands and the next command")
+    _add_common(next_)
+    next_.add_argument("job", help="job id")
+
+    finish = subs.add_parser("finish", help="agent mode: assemble, validate and scan in one call")
+    _add_common(finish)
+    finish.add_argument("job", help="job id")
+    finish.add_argument(
+        "--metrics", action="store_true", help="add pacing and hook metrics (deterministic)"
     )
 
     prepare = subs.add_parser("prepare", help="agent mode: build the evidence pack to read")
