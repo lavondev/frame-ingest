@@ -227,6 +227,9 @@ def test_launcher_explains_how_to_install_when_nothing_is_available() -> None:
     if shutil.which("uv", path="/usr/bin:/bin"):  # pragma: no cover - uv in a system dir
         pytest.skip("uv is on the minimal PATH")
     assert res.returncode == 4 and "scripts/install.sh" in res.stderr
+    # Someone who never heard of uv must be told what it is and how to get it.
+    assert "brew install uv" in res.stderr and "docs.astral.sh/uv" in res.stderr
+    assert not re.search(r"\bcurl\b|\|\s*sh\b", res.stderr)  # no piped installer in agent output
 
 
 def test_launcher_runs_the_cli_from_a_checkout() -> None:
