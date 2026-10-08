@@ -50,20 +50,24 @@ release through `uvx`; it never downloads "latest" and never pipes a script into
 
 ## Try it
 
-**With a coding agent (agent mode).** Copy or symlink `skills/frame-ingest/` into your agent's
-skills directory (for Claude Code: `~/.claude/skills/frame-ingest`), then ask it to
-`/frame-ingest path/to/video.mp4`. Add a caption file (`.srt` or `.vtt`) to get a transcript.
-The agent looks at contact sheets of frames, writes the analysis as JSON, and the CLI validates
-it and builds the document. Frames and transcript go to whichever model runs your agent.
+**With a coding agent (agent mode).** Install as above, then ask for
+`/frame-ingest path/to/video.mp4`. The agent makes four calls: `ingest` (checks the install,
+transcribes speech on your machine, picks frames, builds contact sheets and writes fill-in
+templates), then it fills the templates while looking at the sheets, runs `check` on each file,
+and `finish` builds, validates and scans the document. Its reply ends with a coverage line such
+as `audio yes · transcript asr · frames 8/8 analysed`. If the video has audio but no transcript
+can be made, it stops and asks you: captions, frames only, or cloud speech (with your consent).
+Frames and transcript go to whichever model runs your agent.
 
 **By hand.**
 
 ```bash
-frame-ingest prepare video.mp4 --captions video.srt   # evidence pack + manifest
-# ...write vision/*.json, corrections.json, synthesis.json under the reported output directory
-frame-ingest assemble <job_id>                        # validate, then write the document
-frame-ingest validate <document.md>
-frame-ingest run video.mp4 --profile fake             # offline demo with canned output
+printf '%s' video.mp4 | frame-ingest ingest - --json   # task card: job id, files to fill, next command
+# ...replace every TODO: in the files listed under "fill", checking each one:
+frame-ingest check <file> --json
+frame-ingest next <job_id> --json                       # where the job stands, the next command
+frame-ingest finish <job_id> --json                     # build, validate and scan
+frame-ingest run video.mp4 --profile fake               # offline demo with canned output
 ```
 
 **Pipeline mode (the CLI calls the models).**
@@ -94,7 +98,41 @@ given or `egress: allow` is set. Prices for `--max-cost` go in `~/.frame-ingest/
   suits long videos.
 - **Never pay twice.** Every stage is cached and resumable.
 
+## Evals
+
+Three short videos with known answers, generated rather than stored (`evals/cases.json`):
+
+| Case | What it tests | Expected |
+|---|---|---|
+| `speech-on-screen-text` | narration naming things written on the slides | transcript (`audio: yes`), the slide spelling used in corrections |
+| `speech-under-music` | narration under a loud music bed | a transcript, if needed through the retry without voice filtering; never a quiet frames-only document |
+| `silent-slides` | slides with a silent audio track | `needs_decision`; the agent asks, and only after you choose frames only: `audio: no` and the "Frames only" banner |
+
+**CLI side, offline** (scripted speech-to-text and agent, runs in CI):
+
+```bash
+uv run pytest tests/test_evals.py
+```
+
+**Agent side, by hand.** This is the part that tells you whether a model follows the skill.
+
+1. Make the videos with real speech (macOS `say`, or `espeak-ng` on Linux):
+   `uv run python evals/make_fixtures.py` (they land in `evals/out/`).
+2. Optionally keep eval jobs apart from your own: `export FRAME_INGEST_HOME=$PWD/evals/home` in
+   the terminal you start the agent from.
+3. In **Claude Code** (`claude`, or `claude --model <haiku|sonnet|opus>` to compare models) run
+   each case in a fresh session:
+   `/frame-ingest evals/out/speech-on-screen-text.mp4`, then `speech-under-music.mp4`, then
+   `silent-slides.mp4`. For the silent case the agent must stop and ask; answer "frames only".
+4. In **Codex** (`codex`), the same three, invoked as `$frame-ingest evals/out/<case>.mp4`.
+5. Score what is on disk: `uv run python evals/score.py` (add `--home "$FRAME_INGEST_HOME"` if
+   you set it). Every check should say PASS. Also read each reply: it should give the document
+   path, the TL;DR, the chapters and the coverage line, and never pick an option for you.
+
 ## Documentation
+
+- [`docs/HARDENED-ARCHITECTURE.md`](docs/HARDENED-ARCHITECTURE.md): the ingest, check, finish
+  design and the audio guarantee.
 
 - [`docs/PLAN.md`](docs/PLAN.md): architecture, security model, roadmap and open decisions.
 - [`docs/TESTING.md`](docs/TESTING.md): the quick try-it page; [`docs/TESTING-DEEP.md`](docs/TESTING-DEEP.md) has the thorough checks.

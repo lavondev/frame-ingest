@@ -8,12 +8,22 @@ quote, an implausible correction) are dropped with a warning, exactly as in pipe
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
-from typing import Any, TypeVar
 
-from pydantic import BaseModel, ValidationError
-
+from frame_ingest.agent.audio import frames_only_note, load_status
+from frame_ingest.agent.checks import (
+    M,
+    Problem,
+    check_corrections,
+    check_synthesis,
+    check_vision,
+    find_placeholders,
+    missing_frames_problem,
+    parse,
+    placeholder_problem,
+    problem,
+    read_output,
+)
 from frame_ingest.agent.prepare import (
     agent_dir,
     load_registry,
@@ -22,12 +32,13 @@ from frame_ingest.agent.prepare import (
 from frame_ingest.agent.schemas import AgentSynthesis
 from frame_ingest.engine import Engine
 from frame_ingest.errors import FrameIngestError
-from frame_ingest.guard.paths import PathRejected, job_jail, read_bytes_nofollow
+from frame_ingest.guard.paths import job_jail
 from frame_ingest.llm_schemas import CorrectionOut, VisionBatchOut
 from frame_ingest.models import (
     Chapter,
     Entity,
     FrameAnalysis,
+    FrameInfo,
     GlossaryEntry,
     Job,
     JobStatus,
@@ -42,9 +53,7 @@ from frame_ingest.pipeline import assemble as assemble_stage
 from frame_ingest.pipeline.context import PipelineContext
 from frame_ingest.pipeline.correct import (
     CorrectionResult,
-    accept_text,
     render_diff,
-    validate_correction,
 )
 from frame_ingest.pipeline.frames import FramesResult
 from frame_ingest.pipeline.synthesize import (
@@ -53,81 +62,54 @@ from frame_ingest.pipeline.synthesize import (
     frames_in,
     merge_entities,
     segments_in,
-    validate_chapters,
     verify_quotes,
 )
 from frame_ingest.pipeline.textutil import dedupe_keep_order
 from frame_ingest.pipeline.transcribe import TranscribeResult
-from frame_ingest.pipeline.vision import VisionResult, to_analysis
+from frame_ingest.pipeline.vision import VisionResult
 from frame_ingest.profiles import fake_bundle
-
-MAX_OUT_BYTES = 2 * 1024 * 1024
-MAX_LISTED = 20
-M = TypeVar("M", bound=BaseModel)
 
 
 class ValidationFailed(FrameIngestError):
     code = "validation_failed"
     status = 422
 
-    def __init__(self, problems: list[dict[str, str]]) -> None:
+    def __init__(self, problems: list[Problem]) -> None:
         super().__init__(f"{len(problems)} problem(s) in the agent outputs; fix them and re-run.")
         self.problems = problems
 
 
-def _problem(file: str, code: str, message: str) -> dict[str, str]:
-    return {"file": file, "code": code, "message": message}
-
-
-def _load(path: Path, model: type[M], rel: str, problems: list[dict[str, str]]) -> M | None:
-    try:
-        if path.stat().st_size > MAX_OUT_BYTES:
-            problems.append(_problem(rel, "too_large", f"file exceeds {MAX_OUT_BYTES} bytes"))
-            return None
-        raw = json.loads(read_bytes_nofollow(path).decode("utf-8"))
-        return model.model_validate(raw)
-    except PathRejected as exc:
-        problems.append(_problem(rel, "bad_file", exc.message))
-    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-        problems.append(_problem(rel, "bad_json", f"not valid JSON: {type(exc).__name__}"))
-    except ValidationError as exc:
-        for err in exc.errors()[:5]:
-            where = ".".join(str(p) for p in err["loc"]) or "(root)"
-            problems.append(_problem(rel, "bad_schema", f"{where}: {err['msg']}"))
-    return None
+def _load(path: Path, model: type[M], rel: str, problems: list[Problem]) -> M | None:
+    raw = read_output(path, rel, problems)
+    if raw is None:
+        return None
+    todo = find_placeholders(raw)
+    if todo:
+        problems.append(placeholder_problem(rel, todo))
+    return parse(raw, model, rel, problems)
 
 
 def _check_vision(
-    out_dir: Path, registry_frames: list[Any], problems: list[dict[str, str]]
+    out_dir: Path, registry_frames: list[FrameInfo], problems: list[Problem]
 ) -> list[FrameAnalysis]:
     info = {f.name: f for f in registry_frames}
     files = sorted((out_dir / "vision").glob("*.json"))
     if not files:
-        problems.append(_problem("vision/", "missing", "no vision/*.json files were written"))
+        problems.append(problem("vision/", "missing", "no vision/*.json files were written"))
         return []
     got: dict[str, FrameAnalysis] = {}
+    seen: dict[str, str] = {}
     for path in files:
         rel = f"vision/{path.name}"
         batch = _load(path, VisionBatchOut, rel, problems)
         if batch is None:
             continue
-        for item in batch.frames:
-            if item.frame not in info:
-                problems.append(
-                    _problem(rel, "unknown_frame", f"unknown frame {item.frame[:60]!r}")
-                )
-            elif item.frame in got:
-                problems.append(_problem(rel, "duplicate_frame", f"{item.frame} analysed twice"))
-            elif not item.scene_description.strip():
-                problems.append(_problem(rel, "empty", f"{item.frame}: scene_description is empty"))
-            else:
-                got[item.frame] = to_analysis(item, info[item.frame])
-    missing = [n for n in info if n not in got]
+        found, file_problems = check_vision(batch, rel, info, seen)
+        got.update(found)
+        problems += file_problems
+    missing = missing_frames_problem(n for n in info if n not in got)
     if missing:
-        listed = ", ".join(missing[:MAX_LISTED]) + (" ..." if len(missing) > MAX_LISTED else "")
-        problems.append(
-            _problem("vision/", "missing_frames", f"{len(missing)} frame(s) not analysed: {listed}")
-        )
+        problems.append(missing)
     return [got[n] for n in info if n in got]
 
 
@@ -135,14 +117,14 @@ def _check_corrections(
     out_dir: Path,
     segments: list[Segment],
     ctx: PipelineContext,
-    problems: list[dict[str, str]],
+    problems: list[Problem],
 ) -> CorrectionResult:
     ctx.current_stage = StageName.CORRECT
     segs = [s.model_copy() for s in segments]
     path = out_dir / "corrections.json"
     if not segs:
         if path.exists():
-            problems.append(_problem("corrections.json", "unexpected", "there is no transcript"))
+            problems.append(problem("corrections.json", "unexpected", "there is no transcript"))
         return CorrectionResult()
     if not path.exists():
         ctx.warn("corrections_skipped", "No corrections were submitted; raw transcript kept.")
@@ -151,20 +133,15 @@ def _check_corrections(
     else:
         out = _load(path, CorrectionOut, "corrections.json", problems)
         if out is not None:
-            texts, err = validate_correction(segs, out)
-            if err:
-                problems.append(_problem("corrections.json", "bad_ids", err))
-            else:
-                rejected = 0
+            texts, found, implausible = check_corrections(out, "corrections.json", segs)
+            problems += found
+            if texts is not None:
                 for s in segs:
-                    if accept_text(s.raw_text, texts[s.id]):
-                        s.corrected_text = texts[s.id]
-                    else:
-                        s.corrected_text = s.raw_text
-                        rejected += 1
-                if rejected:
+                    s.corrected_text = s.raw_text if s.id in implausible else texts[s.id]
+                if implausible:
                     ctx.warn(
-                        "correction_rejected", f"{rejected} implausible correction(s) ignored."
+                        "correction_rejected",
+                        f"{len(implausible)} implausible correction(s) ignored.",
                     )
     diff, changed = render_diff(segs, ctx.video.duration_s)
     warnings, _, _ = ctx.drain()
@@ -176,33 +153,20 @@ def _check_synthesis(
     segments: list[Segment],
     scenes: list[FrameAnalysis],
     ctx: PipelineContext,
-    problems: list[dict[str, str]],
+    problems: list[Problem],
 ) -> SynthesisResult | None:
     ctx.current_stage = StageName.SYNTHESIZE
     syn = _load(out_dir / "synthesis.json", AgentSynthesis, "synthesis.json", problems)
     if syn is None:
         return None
     d = ctx.video.duration_s
-    bounds = [(c.title, c.start, c.end) for c in syn.chapters]
-    for msg in validate_chapters(bounds, d):
-        problems.append(_problem("synthesis.json", "bad_chapters", msg))
-    if len(syn.chapters) > ctx.config.max_chapters:
-        problems.append(
-            _problem("synthesis.json", "too_many_chapters", f"at most {ctx.config.max_chapters}")
-        )
-    for field in ("title", "tldr", "abstract"):
-        if not getattr(syn, field).strip():
-            problems.append(_problem("synthesis.json", "empty", f"{field} is empty"))
-    for i, c in enumerate(syn.chapters, 1):
-        if not c.title.strip() or not c.summary.strip():
-            problems.append(
-                _problem("synthesis.json", "empty", f"chapter {i}: title/summary empty")
-            )
+    problems += check_synthesis(syn, "synthesis.json", d, ctx.config.max_chapters)
     if problems:
         return None
 
     n = len(syn.chapters)
     chapters: list[Chapter] = []
+    quotes_dropped = 0
     for i, c in enumerate(syn.chapters):
         last = i == n - 1
         cscenes = frames_in(scenes, c.start, c.end, last)
@@ -212,6 +176,7 @@ def _check_synthesis(
             c.start,
             c.end,
         )
+        quotes_dropped += dropped
         if dropped:
             ctx.warn(
                 "quotes_dropped",
@@ -261,7 +226,9 @@ def _check_synthesis(
         tags=clean_tags(syn.tags),
     )
     warnings, _, _ = ctx.drain()
-    return SynthesisResult(chapters=chapters, synthesis=synthesis, warnings=warnings)
+    return SynthesisResult(
+        chapters=chapters, synthesis=synthesis, warnings=warnings, quotes_dropped=quotes_dropped
+    )
 
 
 async def assemble_job(engine: Engine, job_id: str, *, metrics: bool = False) -> Job:
@@ -274,6 +241,17 @@ async def assemble_job(engine: Engine, job_id: str, *, metrics: bool = False) ->
         raise FrameIngestError(
             f"Job '{job.id}' has no evidence pack. Run prepare first.", code="not_prepared"
         )
+    audio = load_status(job_dir)
+    if audio is not None and audio.status == "needs_decision":
+        raise FrameIngestError(
+            f"Job '{job.id}' is waiting for the user to decide what to do about the audio: "
+            f"{audio.message} Run prepare (or ingest) again with --captions, "
+            "--allow-frames-only, or --cloud-speech --allow-egress, as the user chooses.",
+            code="needs_decision",
+        )
+    no_transcript_note = (
+        frames_only_note(audio) if audio is not None and audio.status == "frames_only" else None
+    )
     out_dir = agent_dir(job_dir) / "out"
     transcribed = transcript.source == "asr"
     settings = job.settings.model_copy(
@@ -334,7 +312,7 @@ async def assemble_job(engine: Engine, job_id: str, *, metrics: bool = False) ->
         else:
             ctx.skipped = [StageName.AUDIO, StageName.TRANSCRIBE]
         ctx.current_stage = StageName.ASSEMBLE
-        res = await assemble_stage.run(ctx, mode="agent")
+        res = await assemble_stage.run(ctx, mode="agent", no_transcript_note=no_transcript_note)
 
     job.status = JobStatus.COMPLETED
     job.error = None

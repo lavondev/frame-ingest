@@ -62,6 +62,7 @@ Bound = tuple[str, float, float]
 class SynthesisResult(StageResult):
     chapters: list[Chapter] = []
     synthesis: VideoSynthesis = VideoSynthesis()
+    quotes_dropped: int = 0  # proposed quotes that were not verbatim in the transcript
 
 
 class ProposalUnit(BaseModel):
@@ -69,33 +70,58 @@ class ProposalUnit(BaseModel):
 
 
 # ── chapter validation / repair (pure) ──────────────────────────────────────
-def validate_chapters(bounds: list[Bound], duration: float, tol: float = TOL) -> list[str]:
-    """Problems with a chapter list; empty list means valid."""
+def chapter_problems(
+    bounds: list[Bound], duration: float, tol: float = TOL
+) -> list[tuple[str, str]]:
+    """Problems with a chapter list as (JSON path under the chapter list, message)."""
     if not bounds:
-        return ["no chapters were proposed"]
-    problems: list[str] = []
+        return [("chapters", "no chapters were proposed")]
+    problems: list[tuple[str, str]] = []
     for i, (title, s, e) in enumerate(bounds, 1):
+        at = f"chapters[{i - 1}]"
         if not (math.isfinite(s) and math.isfinite(e)):
-            problems.append(f"chapter {i} has a non-numeric timestamp")
+            problems.append((at, f"chapter {i} has a non-numeric timestamp"))
             continue
         if s < -tol or e > duration + tol:
             problems.append(
-                f"chapter {i} ('{title}') [{s:.1f}-{e:.1f}] exceeds the video (0-{duration:.1f})"
+                (
+                    at,
+                    f"chapter {i} ('{title}') [{s:.1f}-{e:.1f}] exceeds the video "
+                    f"(0-{duration:.1f})",
+                )
             )
         if e - s < MIN_CHAPTER_S - tol:
-            problems.append(f"chapter {i} ('{title}') is shorter than {MIN_CHAPTER_S:.0f}s")
+            problems.append((at, f"chapter {i} ('{title}') is shorter than {MIN_CHAPTER_S:.0f}s"))
     if abs(bounds[0][1]) > tol:
-        problems.append(f"the first chapter must start at 0 (starts at {bounds[0][1]:.1f})")
+        problems.append(
+            (
+                "chapters[0].start",
+                f"the first chapter must start at 0 (starts at {bounds[0][1]:.1f})",
+            )
+        )
     if abs(bounds[-1][2] - duration) > tol:
         problems.append(
-            f"the last chapter must end at {duration:.1f} (ends at {bounds[-1][2]:.1f})"
+            (
+                f"chapters[{len(bounds) - 1}].end",
+                f"the last chapter must end at {duration:.1f} (ends at {bounds[-1][2]:.1f})",
+            )
         )
     for i in range(len(bounds) - 1):
         gap = bounds[i + 1][1] - bounds[i][2]
         if abs(gap) > tol:
             word = "gap" if gap > 0 else "overlap"
-            problems.append(f"{word} of {abs(gap):.1f}s between chapters {i + 1} and {i + 2}")
+            problems.append(
+                (
+                    f"chapters[{i + 1}].start",
+                    f"{word} of {abs(gap):.1f}s between chapters {i + 1} and {i + 2}",
+                )
+            )
     return problems
+
+
+def validate_chapters(bounds: list[Bound], duration: float, tol: float = TOL) -> list[str]:
+    """Problems with a chapter list; empty list means valid."""
+    return [message for _, message in chapter_problems(bounds, duration, tol)]
 
 
 def repair_chapters(
@@ -417,8 +443,10 @@ async def run(ctx: PipelineContext) -> SynthesisResult:
     done = 0
     ctx.progress(0, n + 1, f"Summarising {n} chapter(s)")
 
+    quotes_dropped = 0
+
     async def detail(idx: int) -> None:
-        nonlocal done
+        nonlocal done, quotes_dropped
         ch = chapters[idx]
         last = idx == n - 1
         csegs = segments_in(segs, ch.start, ch.end, last)
@@ -463,6 +491,7 @@ async def run(ctx: PipelineContext) -> SynthesisResult:
                 ch.start,
                 ch.end,
             )
+            quotes_dropped += dropped
             if dropped:
                 ctx.warn(
                     "quotes_dropped",
@@ -550,4 +579,4 @@ async def run(ctx: PipelineContext) -> SynthesisResult:
         )
     ctx.emit("synthesis", synthesis.model_dump(mode="json"))
     ctx.progress(n + 1, n + 1, "Synthesis complete")
-    return SynthesisResult(chapters=chapters, synthesis=synthesis)
+    return SynthesisResult(chapters=chapters, synthesis=synthesis, quotes_dropped=quotes_dropped)

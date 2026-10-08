@@ -233,7 +233,7 @@ def test_prepare_rejects_urls_and_bad_ranges(
     home: Path, sample_video: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     assert cli(capsys, "prepare", "https://example.com/v.mp4")[0] == 3
-    job, _ = prepared(capsys, sample_video)
+    job, _ = prepared(capsys, sample_video, "--allow-frames-only")
     assert cli(capsys, "prepare", "--job", job, "--dense")[0] == 1  # needs a range
     assert cli(capsys, "prepare", "--job", job, "--start", "1", "--end", "5")[0] == 1
     assert cli(capsys, "prepare", "--job", job, "--dense", "--start", "5", "--end", "1")[0] == 1
@@ -598,7 +598,7 @@ def test_captions_win_over_local_transcription(
     assert agent.m["transcript"]["source"] == "captions" and local_whisper.instances == []
 
 
-def test_local_transcription_can_be_switched_off_or_missing(
+def test_local_transcription_switched_off_or_missing_stops_for_a_decision(
     home: Path,
     sample_video: Path,
     local_whisper: Any,
@@ -606,14 +606,16 @@ def test_local_transcription_can_be_switched_off_or_missing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("FRAME_INGEST_AGENT_TRANSCRIBE", "false")
-    _, agent = prepared(capsys, sample_video)
-    assert agent.m["transcript"]["source"] == "none" and local_whisper.instances == []
+    code, data, _ = cli(capsys, "prepare", str(sample_video))
+    assert code == 6 and data["status"] == "needs_decision" and local_whisper.instances == []
+    assert data["decision"]["reason"] == "transcription_disabled"
 
     monkeypatch.delenv("FRAME_INGEST_AGENT_TRANSCRIBE")
     monkeypatch.setattr("frame_ingest.providers.faster_whisper.is_available", lambda: False)
-    _, agent = prepared(capsys, sample_video)
-    assert agent.m["transcript"]["source"] == "none"
-    assert ".[local]" in agent.m["transcript"]["note"]
+    code, data, _ = cli(capsys, "prepare", str(sample_video))
+    assert code == 6 and data["decision"]["reason"] == "speech_extra_missing"
+    assert data["decision"]["options"][0]["id"] == "install_speech"
+    assert "--extra local" in data["decision"]["options"][0]["description"]
 
 
 def test_a_silent_video_is_not_transcribed(

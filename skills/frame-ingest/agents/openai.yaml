@@ -1,7 +1,7 @@
 interface:
   display_name: "frame-ingest"
-  short_description: "Turn a video into a structured, citable Markdown document"
-  default_prompt: "Use $frame-ingest to analyse this video and give me the document path and chapter list."
+  short_description: "Video, lecture, meeting or URL to a citable Markdown document"
+  default_prompt: "Use $frame-ingest on this video: give me the document path, TL;DR, chapters and coverage line."
 
 policy:
   allow_implicit_invocation: true

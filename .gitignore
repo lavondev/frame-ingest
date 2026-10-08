@@ -28,3 +28,6 @@ frame-ingest-out/
 .idea/
 .vscode/
 .hypothesis/
+
+# generated eval videos (evals/make_fixtures.py)
+evals/out/

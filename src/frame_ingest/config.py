@@ -89,6 +89,16 @@ class AppConfig(BaseModel):
 
     # Agent mode: transcribe locally (faster-whisper) when a video has speech but no captions
     agent_transcribe: bool = True
+    # Audio guarantee: a track whose mean level is at or below this (dBFS) counts as silent, so
+    # an empty transcript is believed; above it, transcription is retried without the VAD filter
+    silence_threshold_db: float = Field(-50.0, ge=-120, le=0)
+    # Agent mode: above this length the task card splits the vision work into groups that can go
+    # to parallel subagents (guidance only; the CLI never starts an agent)
+    long_video_minutes: float = Field(20.0, gt=0)
+    long_video_max_groups: int = Field(8, ge=1, le=64)
+    # Copy each finished document to ./frame-ingest-out/ in the current folder, where the agent's
+    # harness can preview it (agent/reply.py has the rules); false keeps it in the job folder only
+    preview_copy: bool = True
 
     # OS sandbox for ffmpeg (PLAN T3): off, auto (use it when it works), require (refuse without)
     sandbox: Literal["off", "auto", "require"] = "auto"

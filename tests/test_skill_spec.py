@@ -66,6 +66,7 @@ def test_skill_matches_spec(skill_dir: Path) -> None:
 
 # ── the frame-ingest skill specifically (docs/PLAN.md T9) ───────────────────────
 import argparse  # noqa: E402
+import json  # noqa: E402
 import os  # noqa: E402
 import shutil  # noqa: E402
 import subprocess  # noqa: E402
@@ -101,22 +102,78 @@ def test_skill_has_no_network_fetches_or_pipes_to_interpreters() -> None:
     assert not re.search(r"\|\s*(sh|bash|zsh|python3?|node|perl|ruby)\b", text)
 
 
+def _reference_text() -> str:
+    return "\n".join(p.read_text(encoding="utf-8") for p in (FI_DIR / "references").glob("*.md"))
+
+
 def test_every_command_in_skill_md_exists_and_goes_through_the_launcher() -> None:
     commands = set(_subcommands())
-    mentioned = re.findall(r"\bfi (?:\S+ )?(\w+)", _skill_text())
-    used = {m for m in mentioned if m in commands | {"doctor"}}
-    assert set(commands) >= used  # only real commands
-    assert {"doctor", "estimate", "prepare", "assemble", "validate", "scan", "run"} <= used
-    for line in _skill_text().splitlines():  # no bare invocations of the underlying binary
-        assert not re.search(r"(^|[`\s])frame-ingest (doctor|run|prepare|assemble)", line)
+    text = _skill_text()
+    used = set(re.findall(r"<(?:fi_path|launcher)> (\w+)", text))
+    assert used <= commands, sorted(used - commands)
+    assert {"ingest", "check", "finish", "next"} <= used  # the whole state machine
+    in_refs = set(re.findall(r"`fi (\w+)", _reference_text()))
+    assert in_refs <= commands, sorted(in_refs - commands)
+    for line in (text + _reference_text()).splitlines():  # never the bare underlying binary
+        assert not re.search(r"(^|[`\s])frame-ingest (doctor|run|prepare|assemble|ingest)", line)
 
 
 def test_every_flag_in_skill_md_is_a_real_flag() -> None:
     real: set[str] = set()
     for sub in _subcommands().values():
         real |= {o for a in sub._actions for o in a.option_strings}
-    flags = set(re.findall(r"(?<![\w-])(--[a-z][a-z-]+)", _skill_text()))
+    flags = set(re.findall(r"(?<![\w-])(--[a-z][a-z-]+)", _skill_text() + _reference_text()))
     assert flags <= real | {"--json"}, sorted(flags - real)
+
+
+def test_skill_md_is_short_and_never_asks_for_a_shell_variable() -> None:
+    """The exit-127 bug: SKILL.md told the agent to type `${CLAUDE_SKILL_DIR}/scripts/fi`, the
+    variable was empty in its shell, and it ran `/scripts/fi`. The body must name the launcher by
+    path and then rely on the `fi_path` the CLI returns."""
+    _, body = _split(FI_DIR / "SKILL.md")
+    assert len(body.splitlines()) <= 150
+    for marker in ("${", "$CLAUDE", "$SKILL", "%CLAUDE"):
+        assert marker not in body, marker
+    assert "fi_path" in body and "scripts/fi" in body
+    assert "needs_decision" in body and "Never choose for them" in body
+    assert "reply_markdown" in body and "pasted exactly as given" in body
+
+
+def test_description_front_loads_the_trigger_words() -> None:
+    front, _ = _split(FI_DIR / "SKILL.md")
+    desc = front["description"]
+    assert len(desc) <= 1024
+    head = desc[:90].lower()
+    for word in ("video", "recording", "lecture", "meeting", "screen recording", "youtube/url"):
+        assert word in head, word
+
+
+def test_the_worked_example_is_a_valid_finished_set() -> None:
+    from frame_ingest.agent.checks import (
+        check_corrections,
+        check_synthesis,
+        find_placeholders,
+        unverified_quotes,
+    )
+    from frame_ingest.agent.schemas import AgentSynthesis
+    from frame_ingest.llm_schemas import CorrectionOut, VisionBatchOut
+    from frame_ingest.models import Segment
+
+    text = (FI_DIR / "references" / "example.md").read_text(encoding="utf-8")
+    vision, corrections, synthesis = (
+        json.loads(b) for b in re.findall(r"```json\n(.*?)```", text, re.DOTALL)
+    )
+    assert find_placeholders([vision, corrections, synthesis]) == []
+    VisionBatchOut.model_validate(vision)
+    corr = CorrectionOut.model_validate(corrections)
+    segs = [
+        Segment(id=c.id, start=t, end=t + 5, raw_text=c.corrected_text)
+        for c, t in zip(corr.segments, (0.0, 12.5, 31.0), strict=True)
+    ]
+    assert check_corrections(corr, "corrections.json", segs)[1] == []
+    syn = AgentSynthesis.model_validate(synthesis)
+    assert check_synthesis(syn, "synthesis.json", 48.0, 24) == []
+    assert unverified_quotes(syn, segs, 48.0) == 0
 
 
 def test_referenced_files_exist() -> None:
@@ -131,6 +188,31 @@ def test_launcher_is_posix_sh_and_executable() -> None:
     launcher = FI_DIR / "scripts" / "fi"
     assert os.access(launcher, os.X_OK)
     assert subprocess.run(["sh", "-n", str(launcher)], check=False).returncode == 0
+
+
+def test_every_launcher_route_brings_local_speech() -> None:
+    """The audio guarantee needs faster-whisper: the checkout route and the pinned uvx route
+    install the `local` extra; a `frame-ingest` already on PATH cannot be changed, so `doctor`
+    warns and `prepare`/`ingest` stop with the exact fix when it lacks the extra."""
+    text = (FI_DIR / "scripts" / "fi").read_text(encoding="utf-8")
+    assert 'EXTRAS=${FRAME_INGEST_EXTRAS-"--extra local --extra url"}' in text  # 1. checkout
+    assert '--from "frame-ingest[local,url]==$PIN"' in text  # 3. uvx
+    assert 'uv sync --quiet --project "$repo" --extra local' in (
+        ROOT / "scripts" / "install.sh"
+    ).read_text(encoding="utf-8")
+
+
+def test_doctor_warns_when_local_speech_is_missing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    import json
+
+    from frame_ingest.cli import main
+
+    monkeypatch.setenv("FRAME_INGEST_HOME", str(tmp_path / "home"))
+    main(["doctor", "--json"])  # conftest hides faster_whisper, as on a PATH install without it
+    report = json.loads(capsys.readouterr().out)["report"]
+    assert any("faster-whisper" in w and "--extra local" in w for w in report["warnings"])
 
 
 def test_launcher_explains_how_to_install_when_nothing_is_available() -> None:
@@ -219,3 +301,41 @@ def test_install_script_links_the_skill_for_claude_and_codex_and_is_safe(tmp_pat
     res = run()
     assert res.returncode == 0 and "skipped" in res.stderr
     assert (home / ".claude" / "skills" / "frame-ingest" / "mine.txt").read_text() == "keep"
+
+
+def test_ingest_through_the_launcher_returns_the_launcher_path_to_reuse(
+    tmp_path: Path, silent_video: Path
+) -> None:
+    """The exit-127 bug: the agent typed `${CLAUDE_SKILL_DIR}/scripts/fi` into a shell where the
+    variable was empty. Now `ingest` returns `fi_path`, the launcher's absolute path as invoked
+    (symlinks kept, so it matches the skill directory the harness knows), to reuse verbatim."""
+    import json
+
+    uv = shutil.which("uv")
+    if uv is None:
+        pytest.skip("uv not installed")
+    skills = tmp_path / "agent skills"
+    skills.mkdir()
+    (skills / "frame-ingest").symlink_to(FI_DIR)
+    launcher = skills / "frame-ingest" / "scripts" / "fi"
+    env = {
+        **{k: v for k, v in os.environ.items() if not k.startswith("FRAME_INGEST_")},
+        "PATH": f"{Path(uv).parent}:/usr/bin:/bin",
+        "UV_OFFLINE": "1",
+        "FRAME_INGEST_EXTRAS": "",
+        "FRAME_INGEST_HOME": str(tmp_path / "home"),
+    }
+    res = subprocess.run(
+        [str(launcher), "ingest", "-", "--json"],
+        input=str(silent_video),
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=180,
+        cwd=tmp_path,
+    )
+    assert res.returncode == 0, res.stderr
+    card = json.loads(res.stdout)
+    assert card["fi_path"] == str(launcher) and card["state"] == "fill"
+    assert card["next"].startswith(f"'{launcher}' check ")

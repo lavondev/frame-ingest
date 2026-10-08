@@ -88,6 +88,33 @@ def silent_video(tmp_path_factory: pytest.TempPathFactory) -> Path:
 
 
 @pytest.fixture(scope="session")
+def quiet_video(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """12 s video whose audio track is digital silence (a track with nothing on it)."""
+    out = tmp_path_factory.mktemp("media") / "quiet.mp4"
+    _run(
+        [
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc=s=320x240:d=12:r=10",
+            "-f",
+            "lavfi",
+            "-i",
+            "anullsrc=r=16000:cl=mono",
+            "-t",
+            "12",
+            "-c:v",
+            "mpeg4",
+            "-c:a",
+            "aac",
+            "-shortest",
+            str(out),
+        ]
+    )
+    return out
+
+
+@pytest.fixture(scope="session")
 def long_audio_video(tmp_path_factory: pytest.TempPathFactory) -> Path:
     """80 s mostly-static video with audio, for chunking tests."""
     out = tmp_path_factory.mktemp("media") / "long.mp4"
@@ -128,6 +155,22 @@ def _job_jail(tmp_path_factory: pytest.TempPathFactory) -> Iterator[None]:
 
     with job_jail(tmp_path_factory.getbasetemp()):
         yield
+
+
+@pytest.fixture(autouse=True)
+def _in_a_temp_folder(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """`finish` copies documents into ./frame-ingest-out/; never into the repository."""
+    work = tmp_path / "session-folder"
+    work.mkdir(exist_ok=True)
+    monkeypatch.chdir(work)
+
+
+@pytest.fixture(autouse=True)
+def _no_real_speech_model(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The real faster-whisper downloads model weights from the network on first use, so tests
+    never see it: importing it fails (as when the `local` extra is missing) unless a test installs
+    a stand-in module of its own."""
+    monkeypatch.setitem(sys.modules, "faster_whisper", None)
 
 
 @pytest.fixture(autouse=True)

@@ -571,7 +571,7 @@ async def test_faster_whisper_errors_are_actionable_and_key_free(
     tr = FasterWhisperTranscriber("small", download_root=tmp_path, offline=False)
     with pytest.raises(FatalProviderError) as exc:
         await tr.transcribe(audio, **kw)
-    assert exc.value.code == "missing_dependency" and ".[local]" in exc.value.message
+    assert exc.value.code == "missing_dependency" and "frame-ingest[local" in exc.value.message
 
     class Broken:
         def __init__(self, *_a: Any, **_k: Any) -> None:
@@ -652,7 +652,7 @@ def test_doctor_local_gives_the_exact_fix_for_each_problem(
     monkeypatch.setattr("frame_ingest.providers.faster_whisper.is_available", lambda: False)
     code, out, _ = run_cli(capsys, "doctor", "--profile", "local")
     msgs = " ".join(c["message"] for c in out["report"]["checks"] if not c["ok"])
-    assert code == 1 and "ollama pull qwen2.5vl:7b" in msgs and ".[local]" in msgs
+    assert code == 1 and "ollama pull qwen2.5vl:7b" in msgs and "--extra local" in msgs
 
     fake_openai(
         monkeypatch,

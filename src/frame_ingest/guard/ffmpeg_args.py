@@ -47,6 +47,8 @@ def _matches(pattern: re.Pattern[str]) -> Callable[[str], bool]:
 
 
 def _filter_ok(value: str) -> bool:
+    if value.startswith("-"):  # an option, not a filter graph (found by tests/test_fuzz.py)
+        return False
     return _FILTER_CHARS.match(value) is not None and _FILTER_DENY.search(value) is None
 
 
@@ -66,6 +68,7 @@ VALUE_OPTIONS: dict[str, Callable[[str], bool]] = {
     "-map": _matches(re.compile(r"^\d{1,3}:[av]:\d{1,3}$")),
     "-f": _one_of("lavfi", "null", "f32le"),  # f32le: raw 32-bit float samples, for local ASR
     "-vf": _filter_ok,
+    "-af": _one_of("volumedetect"),  # loudness measurement only (the audio guarantee)
 }
 
 

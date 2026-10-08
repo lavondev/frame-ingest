@@ -12,6 +12,7 @@ import asyncio
 import hashlib
 import logging
 import os
+import secrets
 import shutil
 from collections.abc import Callable
 from pathlib import Path
@@ -42,7 +43,7 @@ from frame_ingest.pipeline.estimate import build_estimate
 from frame_ingest.pipeline.probe import probe_video
 from frame_ingest.pipeline.runner import StageFailed, StageHooks, run_pipeline
 from frame_ingest.providers.base import ProviderBundle, TranscriberCaps
-from frame_ingest.storage import JobStore, safe_filename
+from frame_ingest.storage import JobStore, safe_filename, write_json
 
 log = logging.getLogger("frame_ingest.engine")
 ProviderFactory = Callable[[], ProviderBundle]
@@ -105,6 +106,19 @@ def _video(job: Job) -> VideoInfo:
     if job.video is None:
         raise FrameIngestError(f"Job '{job.id}' has no probed input video.", code="corrupt_job")
     return job.video
+
+
+def job_id_for(sha256: str) -> str:
+    """Job ids come from the content: the same video always maps to the same job."""
+    return sha256[:12]
+
+
+def _hash(src: Path) -> str:
+    sha = hashlib.sha256()
+    with os.fdopen(open_source_nofollow(src), "rb") as fin:
+        while chunk := fin.read(_COPY_CHUNK):
+            sha.update(chunk)
+    return sha.hexdigest()
 
 
 def _copy_and_hash(src: Path, dst: Path) -> tuple[int, str]:
@@ -175,43 +189,114 @@ class Engine:
         source_url: str | None = None,
         move: bool = False,
     ) -> Job:
-        """Copy `source` into a new job directory, probe it and record the job.
+        job, _ = await self.create_or_reuse(
+            source, settings, filename=filename, profile=profile, source_url=source_url, move=move
+        )
+        return job
 
-        The pipeline only ever reads the copy inside the job directory.
+    async def create_or_reuse(
+        self,
+        source: Path,
+        settings: JobSettings | None = None,
+        *,
+        filename: str | None = None,
+        profile: str | None = None,
+        source_url: str | None = None,
+        move: bool = False,
+    ) -> tuple[Job, bool]:
+        """The job for `source`, and whether it was created now.
+
+        The job id is the first 12 hex digits of the content's sha256, so the same video gets
+        the same job (and its caches and agent work) whichever command sees it first. A new job
+        is copied, probed and recorded in a private staging directory, then renamed into place,
+        so a job directory is never half-made. The pipeline only ever reads the copy.
         """
         require_regular_file(source, what="input")
         name = safe_filename(filename or source.name)
         check_size(source.stat().st_size, self.config)
-        check_container(source, what=name)  # cheap early refusal before copying a large file
+        check_container(source, what=name)  # cheap early refusal before reading a large file
+        sha = await asyncio.to_thread(_hash, source)
+        existing = self._reuse(sha, settings, profile, source_url)
+        if existing is not None:
+            if move:  # a private download we own: do not keep two copies on disk
+                source.unlink(missing_ok=True)
+            return existing, False
+
         check_disk(self.store.root, source.stat().st_size)
-        job_id = self.store.new_id()
-        dest = self.store.video_path(job_id, name)
+        staging = self.store.root / f".staging-{secrets.token_hex(6)}"
         try:
-            with job_jail(self.store.dir(job_id)):
+            with job_jail(staging):
+                dest = staging / "upload" / name
                 size, sha = await asyncio.to_thread(_copy_and_hash, source, dest)
                 check_size(size, self.config)
                 check_container(dest, what=name)  # the copy is what ffmpeg will read
                 video = await probe_video(dest, filename=name, size_bytes=size, sha256=sha)
                 check_video(video, self.config)
+                now = utcnow()
+                job = Job(
+                    id=job_id_for(sha),
+                    created_at=now,
+                    updated_at=now,
+                    profile=profile,
+                    source_url=source_url,
+                    retrieved_at=now if source_url else None,
+                    status=JobStatus.CREATED,
+                    settings=resolve_settings(self.config, settings),
+                    video=video,
+                    stages=new_stage_states(),
+                )
+                write_json(staging / "job.json", job)
+            try:
+                staging.rename(self.store.root / job.id)
+            except OSError:  # made meanwhile by another command (or the file changed under us)
+                shutil.rmtree(staging, ignore_errors=True)
+                existing = self._reuse(sha, settings, profile, source_url)
+                if existing is None:
+                    raise
+                if move:
+                    source.unlink(missing_ok=True)
+                return existing, False
         except BaseException:
-            shutil.rmtree(self.store.root / job_id, ignore_errors=True)
+            shutil.rmtree(staging, ignore_errors=True)
             raise
-        now = utcnow()
-        job = Job(
-            id=job_id,
-            created_at=now,
-            updated_at=now,
-            profile=profile,
-            source_url=source_url,
-            retrieved_at=now if source_url else None,
-            status=JobStatus.CREATED,
-            settings=resolve_settings(self.config, settings),
-            video=video,
-            stages=new_stage_states(),
-        )
-        self.save(job)
-        if move:  # a private download we own: do not keep two copies on disk
+        if move:
             source.unlink(missing_ok=True)
+        return job, True
+
+    def _reuse(
+        self,
+        sha: str,
+        settings: JobSettings | None,
+        profile: str | None,
+        source_url: str | None,
+    ) -> Job | None:
+        """The existing job for this content, updated with the caller's options, if any."""
+        job_id = job_id_for(sha)
+        if not (self.store.root / job_id).exists():
+            return None
+        if not self.store.exists(job_id):
+            raise FrameIngestError(
+                f"The job directory for this video ({job_id}) is incomplete. Remove "
+                f"{self.store.root / job_id} and run the command again.",
+                code="corrupt_job",
+            )
+        job = self.load(job_id)
+        if job.video is None or job.video.sha256 != sha:
+            raise FrameIngestError(
+                f"Job {job_id} holds a different video (an id collision). Remove "
+                f"{self.store.root / job_id} and run the command again.",
+                code="corrupt_job",
+            )
+        changed = False
+        resolved = resolve_settings(self.config, settings)  # this call's options, as for a new job
+        if resolved != job.settings:
+            job.settings, job.estimate, changed = resolved, None, True
+        if profile is not None and job.profile != profile:
+            job.profile, changed = profile, True
+        if source_url and not job.source_url:
+            job.source_url, job.retrieved_at, changed = source_url, utcnow(), True
+        if changed:
+            self.save(job)
         return job
 
     def update_settings(self, job_id: str, settings: JobSettings) -> Job:
