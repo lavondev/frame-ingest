@@ -17,7 +17,7 @@ import yaml
 from frame_ingest.errors import FrameIngestError
 from frame_ingest.guard.paths import PathRejected, read_bytes_nofollow, require_regular_file
 from frame_ingest.guard.scan import scan_many
-from frame_ingest.pipeline.assemble import BANNER, check_timestamps
+from frame_ingest.pipeline.assemble import BANNER, FRAMES_ONLY, check_timestamps
 from frame_ingest.pipeline.timefmt import parse_ts
 
 MAX_DOC_BYTES = 8 * 1024 * 1024
@@ -30,7 +30,17 @@ REQUIRED_FRONT = (
     "trust",
     "mode",
     "injection_flags",
+    "coverage",
 )
+COVERAGE_KEYS = (
+    "audio",
+    "audio_track",
+    "transcript_source",
+    "frames_analyzed",
+    "chapters",
+    "quotes_verified",
+)
+_RATIO = re.compile(r"^\d+/\d+$")
 SECTIONS = (
     "## TL;DR {#tldr}",
     "## Abstract {#abstract}",
@@ -96,6 +106,7 @@ def validate_document(text: str) -> list[dict[str, Any]]:
         issues.append(_issue("trust", "frontmatter trust must be 'untrusted-content'"))
     if BANNER not in body:
         issues.append(_issue("banner", "the untrusted-content banner is missing"))
+    issues += _check_coverage(front.get("coverage"), body)
 
     lines = body.splitlines()
     ids: dict[str, int] = {}
@@ -154,6 +165,30 @@ def validate_document(text: str) -> list[dict[str, Any]]:
     if isinstance(duration, int | float):
         for ts in check_timestamps(body, float(duration)):
             issues.append(_issue("timestamp", f"timestamp {ts} is past the video duration"))
+    return issues
+
+
+def _check_coverage(coverage: Any, body: str) -> list[dict[str, Any]]:
+    if coverage is None:
+        return []  # reported as a missing frontmatter key
+    if not isinstance(coverage, dict):
+        return [_issue("coverage", "frontmatter coverage must be a mapping")]
+    issues = [
+        _issue("coverage", f"coverage is missing '{key}'")
+        for key in COVERAGE_KEYS
+        if key not in coverage
+    ]
+    audio = coverage.get("audio")
+    if audio not in ("yes", "no"):
+        issues.append(_issue("coverage", "coverage.audio must be 'yes' or 'no'"))
+    for key in ("frames_analyzed", "quotes_verified"):
+        if key in coverage and not _RATIO.match(str(coverage[key])):
+            issues.append(_issue("coverage", f"coverage.{key} must look like N/M"))
+    has_banner = any(line.startswith(FRAMES_ONLY) for line in body.splitlines())
+    if audio == "no" and not has_banner:
+        issues.append(_issue("frames_only", "audio is 'no' but the Frames-only banner is missing"))
+    if audio == "yes" and has_banner:
+        issues.append(_issue("frames_only", "audio is 'yes' but the document says 'Frames only'"))
     return issues
 
 

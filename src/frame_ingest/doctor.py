@@ -307,6 +307,17 @@ async def check_ytdlp() -> HealthCheck:
         return HealthCheck(name="yt-dlp", ok=False, message=exc.message)
 
 
+def check_speech(config: AppConfig) -> str | None:
+    """A warning when agent mode cannot transcribe on this machine (the `local` extra)."""
+    from frame_ingest.providers.faster_whisper import INSTALL_HINT, is_available
+
+    if not config.agent_transcribe:
+        return "local speech-to-text is switched off (agent_transcribe: false)."
+    if not is_available():
+        return f"local speech-to-text (faster-whisper) is not installed. {INSTALL_HINT}"
+    return None
+
+
 async def check_local(config: AppConfig) -> list[HealthCheck]:
     """Readiness of the `local` profile. Only ever talks to loopback."""
     from urllib.parse import urlsplit

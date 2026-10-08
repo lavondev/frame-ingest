@@ -66,6 +66,7 @@ VALUE_OPTIONS: dict[str, Callable[[str], bool]] = {
     "-map": _matches(re.compile(r"^\d{1,3}:[av]:\d{1,3}$")),
     "-f": _one_of("lavfi", "null", "f32le"),  # f32le: raw 32-bit float samples, for local ASR
     "-vf": _filter_ok,
+    "-af": _one_of("volumedetect"),  # loudness measurement only (the audio guarantee)
 }
 
 

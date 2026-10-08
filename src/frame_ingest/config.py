@@ -89,6 +89,9 @@ class AppConfig(BaseModel):
 
     # Agent mode: transcribe locally (faster-whisper) when a video has speech but no captions
     agent_transcribe: bool = True
+    # Audio guarantee: a track whose mean level is at or below this (dBFS) counts as silent, so
+    # an empty transcript is believed; above it, transcription is retried without the VAD filter
+    silence_threshold_db: float = Field(-50.0, ge=-120, le=0)
 
     # OS sandbox for ffmpeg (PLAN T3): off, auto (use it when it works), require (refuse without)
     sandbox: Literal["off", "auto", "require"] = "auto"

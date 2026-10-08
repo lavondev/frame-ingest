@@ -133,6 +133,31 @@ def test_launcher_is_posix_sh_and_executable() -> None:
     assert subprocess.run(["sh", "-n", str(launcher)], check=False).returncode == 0
 
 
+def test_every_launcher_route_brings_local_speech() -> None:
+    """The audio guarantee needs faster-whisper: the checkout route and the pinned uvx route
+    install the `local` extra; a `frame-ingest` already on PATH cannot be changed, so `doctor`
+    warns and `prepare`/`ingest` stop with the exact fix when it lacks the extra."""
+    text = (FI_DIR / "scripts" / "fi").read_text(encoding="utf-8")
+    assert 'EXTRAS=${FRAME_INGEST_EXTRAS-"--extra local --extra url"}' in text  # 1. checkout
+    assert '--from "frame-ingest[local,url]==$PIN"' in text  # 3. uvx
+    assert 'uv sync --quiet --project "$repo" --extra local' in (
+        ROOT / "scripts" / "install.sh"
+    ).read_text(encoding="utf-8")
+
+
+def test_doctor_warns_when_local_speech_is_missing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    import json
+
+    from frame_ingest.cli import main
+
+    monkeypatch.setenv("FRAME_INGEST_HOME", str(tmp_path / "home"))
+    main(["doctor", "--json"])  # conftest hides faster_whisper, as on a PATH install without it
+    report = json.loads(capsys.readouterr().out)["report"]
+    assert any("faster-whisper" in w and "--extra local" in w for w in report["warnings"])
+
+
 def test_launcher_explains_how_to_install_when_nothing_is_available() -> None:
     env = {"PATH": "/usr/bin:/bin"}  # no frame-ingest, no uv
     res = subprocess.run(

@@ -62,6 +62,7 @@ Bound = tuple[str, float, float]
 class SynthesisResult(StageResult):
     chapters: list[Chapter] = []
     synthesis: VideoSynthesis = VideoSynthesis()
+    quotes_dropped: int = 0  # proposed quotes that were not verbatim in the transcript
 
 
 class ProposalUnit(BaseModel):
@@ -417,8 +418,10 @@ async def run(ctx: PipelineContext) -> SynthesisResult:
     done = 0
     ctx.progress(0, n + 1, f"Summarising {n} chapter(s)")
 
+    quotes_dropped = 0
+
     async def detail(idx: int) -> None:
-        nonlocal done
+        nonlocal done, quotes_dropped
         ch = chapters[idx]
         last = idx == n - 1
         csegs = segments_in(segs, ch.start, ch.end, last)
@@ -463,6 +466,7 @@ async def run(ctx: PipelineContext) -> SynthesisResult:
                 ch.start,
                 ch.end,
             )
+            quotes_dropped += dropped
             if dropped:
                 ctx.warn(
                     "quotes_dropped",
@@ -550,4 +554,4 @@ async def run(ctx: PipelineContext) -> SynthesisResult:
         )
     ctx.emit("synthesis", synthesis.model_dump(mode="json"))
     ctx.progress(n + 1, n + 1, "Synthesis complete")
-    return SynthesisResult(chapters=chapters, synthesis=synthesis)
+    return SynthesisResult(chapters=chapters, synthesis=synthesis, quotes_dropped=quotes_dropped)

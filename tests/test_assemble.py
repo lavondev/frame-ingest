@@ -24,6 +24,7 @@ from frame_ingest.models import (
     VideoSynthesis,
 )
 from frame_ingest.pipeline.assemble import (
+    build_coverage,
     build_entity_index,
     check_timestamps,
     inline,
@@ -212,6 +213,7 @@ def make_analysis(has_audio: bool = True) -> Analysis:
         synthesis=syn,
         entity_index=build_entity_index(chapters, scenes, segs),
         notes=notes,
+        coverage=build_coverage(has_audio, "asr", bool(segs), 2, 2, chapters, 1, None),
     )
 
 

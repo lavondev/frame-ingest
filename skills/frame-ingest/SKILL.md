@@ -54,7 +54,9 @@ absolute path of this directory plus `/scripts/fi`, or plain `frame-ingest` if i
    background) and wait for it; do not give up or start a second copy.** Note `job_id`,
    `manifest` and `output_directory`. Read `transcript.note` in the manifest: it says where the
    transcript came from and what to watch for (speech-to-text misspells names and jargon, so fix
-   them in `corrections.json` using what you read on screen). If there is no transcript, say so.
+   them in `corrections.json` using what you read on screen). If `status` is `needs_decision`
+   (exit 6: audio but no transcript), show the user `decision.message` and its options and ask
+   which one they want; never pick `--allow-frames-only` or `--cloud-speech` yourself.
 4. **Read.** Open the manifest with Read. View each contact sheet (`sheets[].file`) with Read;
    each cell is labelled `#index  HH:MM:SS`. Use full frames (`frames[].file`) only when a sheet
    is not legible (code, dense slides).

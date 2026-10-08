@@ -13,6 +13,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 Seconds = Annotated[float, Field(ge=0)]
 ImageDetail = Literal["low", "high", "auto"]
+TranscriptSource = Literal["asr", "captions", "auto-captions", "none"]
 
 
 def utcnow() -> datetime:
@@ -127,7 +128,7 @@ class Transcript(BaseModel):
     model: str | None = None
     language: str | None = None
     timestamp_precision: Literal["segment", "chunk", "none"] = "none"
-    source: Literal["asr", "captions", "auto-captions", "none"] = "asr"
+    source: TranscriptSource = "asr"
     chunk_count: int = 0
     segments: list[Segment] = Field(default_factory=list)
 
@@ -289,6 +290,19 @@ class PacingMetrics(BaseModel):
     hook: HookMetrics
 
 
+class Coverage(BaseModel):
+    """What a document actually covers, stated at the top so a missing transcript is never
+    silent (the audio guarantee). Computed in code, never by a model."""
+
+    audio: Literal["yes", "no"]  # "yes": the document includes what was said
+    audio_track: bool  # whether the video has an audio track at all
+    transcript_source: TranscriptSource
+    frames_analyzed: str  # "N/M": frames described / frames selected
+    chapters: int
+    quotes_verified: str  # "K/N": verbatim quotes kept / quotes proposed
+    note: str | None = None  # why there is no transcript, when audio is "no"
+
+
 class Analysis(BaseModel):
     """The JSON sidecar (result.json)."""
 
@@ -300,6 +314,7 @@ class Analysis(BaseModel):
     source_url: str | None = None
     retrieved_at: datetime | None = None
     injection_flags: dict[str, int] = Field(default_factory=dict)
+    coverage: Coverage | None = None
     metrics: PacingMetrics | None = None  # only when requested with --metrics
     analyzed_at: datetime
     video: VideoInfo

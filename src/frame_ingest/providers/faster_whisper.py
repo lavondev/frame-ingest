@@ -21,7 +21,10 @@ from frame_ingest.providers.base import (
     UsageDelta,
 )
 
-INSTALL_HINT = 'Install the local extra: uv tool install ".[local]" (from the repository).'
+INSTALL_HINT = (
+    "Install the local speech extra: from a checkout run ./scripts/install.sh (or "
+    'uv sync --extra local); for a tool install run uv tool install "frame-ingest[local,url]".'
+)
 
 
 def is_available() -> bool:
@@ -64,8 +67,12 @@ class FasterWhisperTranscriber:
         offline: bool,
         device: str = "auto",
         compute_type: str = "auto",
+        vad_filter: bool = True,
     ) -> None:
         self.model_name = model_name
+        # Voice-activity filtering skips non-speech, but it can also drop speech under music; the
+        # audio guarantee (agent/audio.py) retries with it off when a loud track yields nothing.
+        self.vad_filter = vad_filter
         self.download_root = download_root
         self.offline = offline
         self.device = device
@@ -119,7 +126,7 @@ class FasterWhisperTranscriber:
                 samples,
                 language=language,
                 initial_prompt=prompt,
-                vad_filter=True,
+                vad_filter=self.vad_filter,
                 condition_on_previous_text=False,
             )
             out = [

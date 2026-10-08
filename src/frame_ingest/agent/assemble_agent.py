@@ -14,6 +14,7 @@ from typing import Any, TypeVar
 
 from pydantic import BaseModel, ValidationError
 
+from frame_ingest.agent.audio import frames_only_note, load_status
 from frame_ingest.agent.prepare import (
     agent_dir,
     load_registry,
@@ -203,6 +204,7 @@ def _check_synthesis(
 
     n = len(syn.chapters)
     chapters: list[Chapter] = []
+    quotes_dropped = 0
     for i, c in enumerate(syn.chapters):
         last = i == n - 1
         cscenes = frames_in(scenes, c.start, c.end, last)
@@ -212,6 +214,7 @@ def _check_synthesis(
             c.start,
             c.end,
         )
+        quotes_dropped += dropped
         if dropped:
             ctx.warn(
                 "quotes_dropped",
@@ -261,7 +264,9 @@ def _check_synthesis(
         tags=clean_tags(syn.tags),
     )
     warnings, _, _ = ctx.drain()
-    return SynthesisResult(chapters=chapters, synthesis=synthesis, warnings=warnings)
+    return SynthesisResult(
+        chapters=chapters, synthesis=synthesis, warnings=warnings, quotes_dropped=quotes_dropped
+    )
 
 
 async def assemble_job(engine: Engine, job_id: str, *, metrics: bool = False) -> Job:
@@ -274,6 +279,17 @@ async def assemble_job(engine: Engine, job_id: str, *, metrics: bool = False) ->
         raise FrameIngestError(
             f"Job '{job.id}' has no evidence pack. Run prepare first.", code="not_prepared"
         )
+    audio = load_status(job_dir)
+    if audio is not None and audio.status == "needs_decision":
+        raise FrameIngestError(
+            f"Job '{job.id}' is waiting for the user to decide what to do about the audio: "
+            f"{audio.message} Run prepare (or ingest) again with --captions, "
+            "--allow-frames-only, or --cloud-speech --allow-egress, as the user chooses.",
+            code="needs_decision",
+        )
+    no_transcript_note = (
+        frames_only_note(audio) if audio is not None and audio.status == "frames_only" else None
+    )
     out_dir = agent_dir(job_dir) / "out"
     transcribed = transcript.source == "asr"
     settings = job.settings.model_copy(
@@ -334,7 +350,7 @@ async def assemble_job(engine: Engine, job_id: str, *, metrics: bool = False) ->
         else:
             ctx.skipped = [StageName.AUDIO, StageName.TRANSCRIBE]
         ctx.current_stage = StageName.ASSEMBLE
-        res = await assemble_stage.run(ctx, mode="agent")
+        res = await assemble_stage.run(ctx, mode="agent", no_transcript_note=no_transcript_note)
 
     job.status = JobStatus.COMPLETED
     job.error = None

@@ -15,7 +15,8 @@ Conventions (the agent-facing contract):
 * The input `-` reads one path from stdin, so a caller never has to quote it into a shell string.
 
 Exit codes: 0 ok, 1 the work failed (job failed, doctor found a problem), 2 usage error,
-3 input rejected, 4 unavailable (profile, config or provider), 5 job not found, 130 interrupted.
+3 input rejected, 4 unavailable (profile, config or provider), 5 job not found, 6 needs a
+decision from the user (`status: needs_decision`, e.g. audio but no transcript), 130 interrupted.
 """
 
 from __future__ import annotations
@@ -49,6 +50,7 @@ from frame_ingest.doctor import (
     HealthCheck,
     check_local,
     check_sandbox,
+    check_speech,
     check_ytdlp,
     report_dict,
     run_doctor,
@@ -82,6 +84,7 @@ EXIT_USAGE = 2
 EXIT_INPUT = 3
 EXIT_UNAVAILABLE = 4
 EXIT_NOT_FOUND = 5
+EXIT_DECISION = 6
 EXIT_INTERRUPTED = 130
 
 PLANNED_COMMANDS = ("clean",)
@@ -189,6 +192,9 @@ async def _cmd_doctor(args: argparse.Namespace, config: AppConfig) -> Result:
     for extra_check in (await check_ytdlp(), await check_sandbox()):
         report.checks.append(extra_check)
         report.ok = report.ok and extra_check.ok
+    speech = check_speech(config)
+    if speech is not None:  # not a failure: `prepare`/`ingest` stop and ask if it is needed
+        report.warnings.append(speech)
     if args.profile == "local":
         extra: list[HealthCheck] = await check_local(config)
         report.checks += extra
@@ -427,29 +433,57 @@ async def _cmd_fetch(args: argparse.Namespace, config: AppConfig) -> Result:
     return Result(payload, lines)
 
 
-async def _cmd_prepare(args: argparse.Namespace, config: AppConfig) -> Result:
-    engine = _engine(config)
-    job = await _job_for(args, engine, _settings(args))
+def _egress_gate(args: argparse.Namespace, config: AppConfig) -> Any:
+    """The consent gate for anything `prepare`/`ingest` would send off the machine."""
+
+    def gate(plan: Any) -> None:
+        print(plan.render(), file=sys.stderr)
+        enforce(
+            plan,
+            mode=config.egress,
+            allow_flag=args.allow_egress,
+            offline=False,
+            interactive=sys.stdin.isatty() and sys.stderr.isatty(),
+            ask=_ask,
+        )
+
+    return gate
+
+
+async def _prepare_job(args: argparse.Namespace, engine: Engine, job: Job) -> dict[str, Any]:
+    if args.allow_egress and not args.cloud_speech:
+        raise _usage("--allow-egress only applies together with --cloud-speech here.")
     captions = _resolve_input(args.captions, what="caption file") if args.captions else None
-    manifest = await prepare_pack(
+    return await prepare_pack(
         engine,
         job.id,
         captions=captions,
         start=args.start,
         end=args.end,
         dense=args.dense,
+        allow_frames_only=args.allow_frames_only,
+        cloud_gate=_egress_gate(args, engine.config) if args.cloud_speech else None,
         on_event=_progress,
     )
+
+
+async def _cmd_prepare(args: argparse.Namespace, config: AppConfig) -> Result:
+    engine = _engine(config)
+    job = await _job_for(args, engine, _settings(args))
+    manifest = await _prepare_job(args, engine, job)
     transcript = manifest["transcript"]
     out_dir = manifest["directories"]["agent"] + "/manifest.json"
+    decided = manifest["status"] != "needs_decision"
     payload = {
-        "ok": True,
+        "ok": decided,
+        "status": manifest["status"],
         "job_id": job.id,
         "manifest": out_dir,
         "frames": len(manifest["frames"]),
         "sheets": len(manifest["sheets"]),
         "transcript_source": transcript["source"],
         "transcript_segments": transcript["segments"],
+        "coverage": manifest["coverage"],
         "drill_frames_added": manifest["drill_frames_added"],
         "output_directory": manifest["directories"]["out"],
     }
@@ -459,7 +493,19 @@ async def _cmd_prepare(args: argparse.Namespace, config: AppConfig) -> Result:
         f"manifest: {out_dir}",
         f"write your outputs under: {payload['output_directory']}",
     ]
+    if not decided:
+        payload["decision"] = manifest["decision"]
+        lines += _decision_lines(manifest["decision"])
+        return Result(payload, lines, EXIT_DECISION)
     return Result(payload, lines)
+
+
+def _decision_lines(decision: dict[str, Any]) -> list[str]:
+    lines = [f"needs a decision: {decision['message']}", decision["ask_user"]]
+    for opt in decision["options"]:
+        flags = " ".join(opt["flags"])
+        lines.append(f"  - {opt['id']}{' (' + flags + ')' if flags else ''}: {opt['description']}")
+    return lines
 
 
 async def _cmd_assemble(args: argparse.Namespace, config: AppConfig) -> Result:
@@ -576,6 +622,21 @@ def _add_input(sub: argparse.ArgumentParser, *, profile: bool) -> None:
 def _add_prepare(sub: argparse.ArgumentParser) -> None:
     sub.add_argument(
         "--captions", metavar="FILE", help="a .srt or .vtt caption file to use as the transcript"
+    )
+    sub.add_argument(
+        "--allow-frames-only",
+        action="store_true",
+        help="if no transcript can be made, continue from the frames (only after the user agrees)",
+    )
+    sub.add_argument(
+        "--cloud-speech",
+        action="store_true",
+        help="transcribe with the cloud speech API from the config (needs a key and consent)",
+    )
+    sub.add_argument(
+        "--allow-egress",
+        action="store_true",
+        help="consent to send the audio for --cloud-speech (only after the user agrees)",
     )
     sub.add_argument(
         "--dense", action="store_true", help="add full-resolution frames for a time range"

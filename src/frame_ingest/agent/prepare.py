@@ -22,21 +22,25 @@ from PIL import Image
 from pydantic import BaseModel, Field
 
 from frame_ingest import __version__
-from frame_ingest.agent.captions import load_captions
+from frame_ingest.agent.audio import (
+    AudioStatus,
+    EgressGate,
+    decision,
+    resolve_transcript,
+    save_status,
+)
+from frame_ingest.agent.common import PrepareError, agent_context, agent_dir, video_of
 from frame_ingest.agent.schemas import SCHEMAS
 from frame_ingest.agent.sheets import build_sheet
 from frame_ingest.engine import Engine
-from frame_ingest.errors import FrameIngestError
 from frame_ingest.guard.paths import job_jail
-from frame_ingest.models import FrameInfo, Job, ProcessingWarning, Segment, StageName, Transcript
-from frame_ingest.pipeline import audio as audio_stage
+from frame_ingest.models import FrameInfo, Job, ProcessingWarning, Segment, Transcript
 from frame_ingest.pipeline import frames as frames_stage
-from frame_ingest.pipeline import transcribe as transcribe_stage
-from frame_ingest.pipeline.context import PipelineContext
 from frame_ingest.pipeline.synthesize import chapter_target_range
 from frame_ingest.pipeline.timefmt import fmt_ts, frame_filename
-from frame_ingest.profiles import fake_bundle
 from frame_ingest.storage import atomic_write_text, read_json
+
+__all__ = ["PrepareError", "agent_dir", "load_registry", "load_transcript", "prepare"]
 
 SHEET_FRAMES = 9
 MAX_DRILL_FRAMES = 24
@@ -53,10 +57,6 @@ class FrameRegistry(BaseModel):
     warnings: list[ProcessingWarning] = Field(default_factory=list)
 
 
-def agent_dir(job_dir: Path) -> Path:
-    return job_dir / "agent"
-
-
 def load_registry(job_dir: Path) -> FrameRegistry | None:
     path = agent_dir(job_dir) / "frames.json"
     return FrameRegistry.model_validate(read_json(path)) if path.is_file() else None
@@ -67,34 +67,8 @@ def load_transcript(job_dir: Path) -> Transcript | None:
     return Transcript.model_validate(read_json(path)) if path.is_file() else None
 
 
-class PrepareError(FrameIngestError):
-    code = "prepare_failed"
-    status = 400
-
-
-def _context(engine: Engine, job: Job, emit: Any = None) -> PipelineContext:
-    extra: dict[str, Any] = {"emit_cb": emit} if emit else {}
-    return PipelineContext(
-        job_id=job.id,
-        job_dir=engine.store.dir(job.id),
-        config=engine.config,
-        settings=job.settings,
-        video=_video(job),
-        video_path=engine.video_path(job),
-        providers=fake_bundle(),
-        current_stage=StageName.FRAMES,
-        **extra,
-    )
-
-
-def _video(job: Job) -> Any:
-    if job.video is None:
-        raise PrepareError(f"Job '{job.id}' has no probed input video.", code="corrupt_job")
-    return job.video
-
-
 async def _select_frames(engine: Engine, job: Job) -> FrameRegistry:
-    ctx = _context(engine, job)
+    ctx = agent_context(engine, job)
     res = await frames_stage.run(ctx)
     warnings, _, _ = ctx.drain()
     return FrameRegistry(frames=res.frames, scene_cuts=res.scene_cuts, warnings=warnings)
@@ -104,7 +78,7 @@ async def _drill(
     engine: Engine, job: Job, registry: FrameRegistry, start: float, end: float
 ) -> int:
     """Add up to MAX_DRILL_FRAMES evenly spaced full-resolution frames between start and end."""
-    d = _video(job).duration_s
+    d = video_of(job).duration_s
     if not (0 <= start < end <= d + 0.5):
         raise PrepareError(
             f"--start/--end must satisfy 0 <= start < end <= {d:.1f} (the video's duration)."
@@ -165,50 +139,6 @@ def _dumps(obj: object) -> str:
     return json.dumps(obj, indent=2, ensure_ascii=False)
 
 
-async def _transcribe_locally(engine: Engine, job: Job, emit: Any) -> Transcript | None:
-    """Speech-to-text on this machine when there are no captions (optional extra `local`).
-
-    Nothing leaves the machine except, on the very first use, the speech model's weights being
-    downloaded from Hugging Face. Returns None when it cannot run (no extra, no audio, disabled)."""
-    from frame_ingest.providers.faster_whisper import FasterWhisperTranscriber, is_available
-
-    cfg = engine.config
-    video = _video(job)
-    if not (cfg.agent_transcribe and video.has_audio and is_available()):
-        return None
-    model = cfg.local.whisper_model
-    ctx = _context(engine, job, emit)
-    ctx.providers.transcriber = FasterWhisperTranscriber(
-        model, download_root=cfg.home / "models", offline=False
-    )
-    ctx.settings = job.settings.model_copy(update={"transcribe_model": model})
-    ctx.keys[StageName.AUDIO] = ctx.keys[StageName.TRANSCRIBE] = f"agent-asr-{model}"
-    ctx.current_stage = StageName.AUDIO
-    ctx.results[StageName.AUDIO] = await audio_stage.run(ctx)
-    ctx.current_stage = StageName.TRANSCRIBE
-    result = await transcribe_stage.run(ctx)
-    transcript = result.transcript
-    if not transcript.segments:
-        return Transcript(source="none")
-    return transcript.model_copy(update={"source": "asr"})
-
-
-def _fetched_captions(job_dir: Path, duration: float) -> Transcript | None:
-    """Captions that came with a downloaded video (manual first, auto-generated last)."""
-    for stem, source in (("captions", "captions"), ("captions-auto", "auto-captions")):
-        for suffix in (".vtt", ".srt"):
-            path = job_dir / f"{stem}{suffix}"
-            if path.is_file() and not path.is_symlink():
-                try:
-                    segs = load_captions(path, duration)
-                except FrameIngestError:
-                    continue
-                return Transcript(
-                    model=source, timestamp_precision="segment", source=source, segments=segs
-                )
-    return None
-
-
 async def prepare(
     engine: Engine,
     job_id: str,
@@ -217,11 +147,16 @@ async def prepare(
     start: float | None = None,
     end: float | None = None,
     dense: bool = False,
+    allow_frames_only: bool = False,
+    cloud_gate: EgressGate | None = None,
     on_event: Any = None,
 ) -> dict[str, Any]:
-    """Create or refresh the evidence pack; returns the manifest."""
+    """Create or refresh the evidence pack; returns the manifest.
+
+    The manifest's `status` is `ready`, or `needs_decision` when the video has audio but no
+    transcript could be made (its `decision` lists the options to put to the user)."""
     job = engine.load(job_id)
-    video = _video(job)
+    video_of(job)  # a job without a probed video is corrupt
     job_dir = engine.store.dir(job.id)
     adir = agent_dir(job_dir)
     with job_jail(job_dir):
@@ -240,47 +175,56 @@ async def prepare(
             raise PrepareError("--start and --end are only used together with --dense.")
         atomic_write_text(adir / "frames.json", registry.model_dump_json(indent=2))
 
-        transcript = load_transcript(job_dir)
-        if captions is not None:
-            segs = load_captions(captions, video.duration_s)
-            transcript = Transcript(
-                model="captions",
-                timestamp_precision="segment",
-                source="captions",
-                segments=segs,
-            )
-        elif transcript is None:
-            transcript = _fetched_captions(job_dir, video.duration_s)
-            if transcript is None:
-                transcript = await _transcribe_locally(engine, job, on_event) or Transcript(
-                    source="none"
-                )
+        transcript, audio = await resolve_transcript(
+            engine,
+            job,
+            load_transcript(job_dir),
+            captions=captions,
+            allow_frames_only=allow_frames_only,
+            cloud_gate=cloud_gate,
+            emit=on_event,
+        )
         atomic_write_text(adir / "transcript.json", transcript.model_dump_json(indent=2))
+        save_status(job_dir, audio)
 
-        manifest = _build_manifest(engine, job, registry, transcript, adir, drilled)
+        manifest = _build_manifest(engine, job, registry, transcript, audio, adir, drilled)
         atomic_write_text(adir / "manifest.json", _dumps(manifest))
     return manifest
 
 
-def _transcript_note(engine: Engine, has_audio: bool, transcript: Transcript) -> str:
-    if not has_audio:
-        return "No transcript: the video has no audio track."
-    if transcript.source == "asr":
-        return (
-            f"Transcribed on this machine with {transcript.model}. Expect mistakes in names and "
-            "jargon: fix them in corrections.json using what you read on screen. Segments carry "
-            "ids; corrections must keep them exactly."
-        )
-    if transcript.segments:
-        return "Segments carry ids; corrections must keep them exactly."
-    from frame_ingest.providers.faster_whisper import is_available
-
-    if is_available() and engine.config.agent_transcribe:
-        return "No speech was found in the audio track."
-    return (
-        "No transcript. Pass --captions <file.srt|file.vtt>, or install the local speech extra "
-        'for automatic transcription: uv tool install ".[local]".'
+def _transcript_note(audio: AudioStatus, transcript: Transcript) -> str:
+    if not transcript.segments:
+        if audio.status == "needs_decision":
+            return audio.message + " Nothing continues until the user decides (see `decision`)."
+        return audio.message or "No transcript."
+    fix = (
+        " Expect mistakes in names and jargon: fix them in corrections.json using what you read "
+        "on screen. Segments carry ids; corrections must keep them exactly."
     )
+    if audio.method == "cloud":
+        return f"Transcribed by the cloud speech model {transcript.model}.{fix}"
+    if audio.method == "local":
+        retried = (
+            " The first pass found nothing, so it was retried without voice-activity filtering "
+            "(usually speech under music)."
+            if len(audio.attempts) > 1
+            else ""
+        )
+        return f"Transcribed on this machine with {transcript.model}.{retried}{fix}"
+    if transcript.source == "auto-captions":
+        return "From auto-generated captions: no punctuation, frequent mishearings." + fix
+    return "Segments carry ids; corrections must keep them exactly."
+
+
+def _coverage(audio: AudioStatus, transcript: Transcript, frames: int) -> dict[str, Any]:
+    return {
+        "audio": "yes" if transcript.segments else "no",
+        "audio_track": audio.audio_track,
+        "transcript_source": transcript.source if transcript.segments else "none",
+        "frames_analyzed": f"0/{frames}",
+        "chapters": None,
+        "quotes_verified": None,
+    }
 
 
 def _build_manifest(
@@ -288,11 +232,12 @@ def _build_manifest(
     job: Job,
     registry: FrameRegistry,
     transcript: Transcript,
+    audio: AudioStatus,
     adir: Path,
     drilled: int,
 ) -> dict[str, Any]:
     cfg = engine.config
-    video = _video(job)
+    video = video_of(job)
     d = video.duration_s
     fdir = engine.store.dir(job.id) / "frames"
     frames = sorted(registry.frames, key=lambda f: f.t)
@@ -325,9 +270,13 @@ def _build_manifest(
     )
     out_dir = adir / "out"
     lo, hi = chapter_target_range(d, cfg.max_chapters)
+    status = "needs_decision" if audio.status == "needs_decision" else "ready"
     return {
         "tool_version": __version__,
         "job_id": job.id,
+        "status": status,
+        "decision": decision(audio, cfg, d) if status == "needs_decision" else None,
+        "coverage": _coverage(audio, transcript, len(frames)),
         "trust": "untrusted-content",
         "notice": NOTICE,
         "video": {
@@ -344,7 +293,10 @@ def _build_manifest(
             "segments": len(transcript.segments),
             "file": str(adir / "transcript.json"),
             "windows": windows,
-            "note": _transcript_note(engine, video.has_audio, transcript),
+            "method": audio.method,
+            "attempts": [a.model_dump() for a in audio.attempts],
+            "loudness": audio.loudness.model_dump() if audio.loudness else None,
+            "note": _transcript_note(audio, transcript),
         },
         "frames": frame_rows,
         "sheets": sheets,
