@@ -2,12 +2,12 @@
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "frame-ingest",
   "version": "0.1.0",
-  "description": "Turn a video (local file or URL) into a structured, citable Markdown document with a corrected transcript, chapters, summaries, glossary and entity index.",
+  "description": "Turn a video, recording, lecture, meeting, screen recording or YouTube/URL into a structured, citable Markdown document with a corrected transcript, chapters, summaries, glossary and entity index.",
   "author": { "name": "lavondev" },
   "homepage": "https://github.com/lavondev/frame-ingest",
   "repository": "https://github.com/lavondev/frame-ingest",
   "license": "MIT",
-  "keywords": ["video", "transcript", "markdown", "citations", "agent-skill"],
+  "keywords": ["video", "transcript", "markdown", "citations", "agent-skill", "lecture", "meeting", "screen-recording", "youtube"],
   "extensions": {
     "com.openai": {
       "interface": {

@@ -66,6 +66,7 @@ def test_skill_matches_spec(skill_dir: Path) -> None:
 
 # ── the frame-ingest skill specifically (docs/PLAN.md T9) ───────────────────────
 import argparse  # noqa: E402
+import json  # noqa: E402
 import os  # noqa: E402
 import shutil  # noqa: E402
 import subprocess  # noqa: E402
@@ -101,22 +102,77 @@ def test_skill_has_no_network_fetches_or_pipes_to_interpreters() -> None:
     assert not re.search(r"\|\s*(sh|bash|zsh|python3?|node|perl|ruby)\b", text)
 
 
+def _reference_text() -> str:
+    return "\n".join(p.read_text(encoding="utf-8") for p in (FI_DIR / "references").glob("*.md"))
+
+
 def test_every_command_in_skill_md_exists_and_goes_through_the_launcher() -> None:
     commands = set(_subcommands())
-    mentioned = re.findall(r"\bfi (?:\S+ )?(\w+)", _skill_text())
-    used = {m for m in mentioned if m in commands | {"doctor"}}
-    assert set(commands) >= used  # only real commands
-    assert {"doctor", "estimate", "prepare", "assemble", "validate", "scan", "run"} <= used
-    for line in _skill_text().splitlines():  # no bare invocations of the underlying binary
-        assert not re.search(r"(^|[`\s])frame-ingest (doctor|run|prepare|assemble)", line)
+    text = _skill_text()
+    used = set(re.findall(r"<(?:fi_path|launcher)> (\w+)", text))
+    assert used <= commands, sorted(used - commands)
+    assert {"ingest", "check", "finish", "next"} <= used  # the whole state machine
+    in_refs = set(re.findall(r"`fi (\w+)", _reference_text()))
+    assert in_refs <= commands, sorted(in_refs - commands)
+    for line in (text + _reference_text()).splitlines():  # never the bare underlying binary
+        assert not re.search(r"(^|[`\s])frame-ingest (doctor|run|prepare|assemble|ingest)", line)
 
 
 def test_every_flag_in_skill_md_is_a_real_flag() -> None:
     real: set[str] = set()
     for sub in _subcommands().values():
         real |= {o for a in sub._actions for o in a.option_strings}
-    flags = set(re.findall(r"(?<![\w-])(--[a-z][a-z-]+)", _skill_text()))
+    flags = set(re.findall(r"(?<![\w-])(--[a-z][a-z-]+)", _skill_text() + _reference_text()))
     assert flags <= real | {"--json"}, sorted(flags - real)
+
+
+def test_skill_md_is_short_and_never_asks_for_a_shell_variable() -> None:
+    """The exit-127 bug: SKILL.md told the agent to type `${CLAUDE_SKILL_DIR}/scripts/fi`, the
+    variable was empty in its shell, and it ran `/scripts/fi`. The body must name the launcher by
+    path and then rely on the `fi_path` the CLI returns."""
+    _, body = _split(FI_DIR / "SKILL.md")
+    assert len(body.splitlines()) <= 150
+    for marker in ("${", "$CLAUDE", "$SKILL", "%CLAUDE"):
+        assert marker not in body, marker
+    assert "fi_path" in body and "scripts/fi" in body
+    assert "needs_decision" in body and "Never choose for them" in body
+
+
+def test_description_front_loads_the_trigger_words() -> None:
+    front, _ = _split(FI_DIR / "SKILL.md")
+    desc = front["description"]
+    assert len(desc) <= 1024
+    head = desc[:90].lower()
+    for word in ("video", "recording", "lecture", "meeting", "screen recording", "youtube/url"):
+        assert word in head, word
+
+
+def test_the_worked_example_is_a_valid_finished_set() -> None:
+    from frame_ingest.agent.checks import (
+        check_corrections,
+        check_synthesis,
+        find_placeholders,
+        unverified_quotes,
+    )
+    from frame_ingest.agent.schemas import AgentSynthesis
+    from frame_ingest.llm_schemas import CorrectionOut, VisionBatchOut
+    from frame_ingest.models import Segment
+
+    text = (FI_DIR / "references" / "example.md").read_text(encoding="utf-8")
+    vision, corrections, synthesis = (
+        json.loads(b) for b in re.findall(r"```json\n(.*?)```", text, re.DOTALL)
+    )
+    assert find_placeholders([vision, corrections, synthesis]) == []
+    VisionBatchOut.model_validate(vision)
+    corr = CorrectionOut.model_validate(corrections)
+    segs = [
+        Segment(id=c.id, start=t, end=t + 5, raw_text=c.corrected_text)
+        for c, t in zip(corr.segments, (0.0, 12.5, 31.0), strict=True)
+    ]
+    assert check_corrections(corr, "corrections.json", segs)[1] == []
+    syn = AgentSynthesis.model_validate(synthesis)
+    assert check_synthesis(syn, "synthesis.json", 48.0, 24) == []
+    assert unverified_quotes(syn, segs, 48.0) == 0
 
 
 def test_referenced_files_exist() -> None:
