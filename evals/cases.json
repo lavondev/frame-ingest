@@ -1,0 +1,66 @@
+{
+  "cases": [
+    {
+      "id": "speech-on-screen-text",
+      "summary": "A narrated three-slide talk. The speaker says product names that are also written on the slides, so a speech-to-text misspelling can be fixed from the screen.",
+      "slides": [
+        {"title": "Widget Frobnicator", "lines": ["Release 4.2", "Setup and tuning"]},
+        {"title": "Step 1: open the dashboard", "lines": ["Settings > Cache", "Default size: 256 MB"]},
+        {"title": "Step 2: tune the cache", "lines": ["Raise it to 1 GB", "Restart the Frobnicator"]}
+      ],
+      "speech": [
+        "Welcome to the Widget Frobnicator, release four point two.",
+        "First, open the dashboard and go to the cache settings.",
+        "Now raise the cache size to one gigabyte and restart the Frobnicator."
+      ],
+      "audio": "speech",
+      "expect": {
+        "ingest_state": "fill",
+        "coverage_audio": "yes",
+        "transcript_source": "asr",
+        "speech_attempts": 1,
+        "on_screen_text": ["Widget Frobnicator"],
+        "notes": "The agent should spell 'Frobnicator' as on the slides in corrections.json."
+      }
+    },
+    {
+      "id": "speech-under-music",
+      "summary": "The same kind of narration with a loud music bed under it, the case where voice-activity filtering can drop all the speech.",
+      "slides": [
+        {"title": "Quarterly review", "lines": ["Revenue up 12%"]},
+        {"title": "Next steps", "lines": ["Hire two engineers"]}
+      ],
+      "speech": [
+        "This is the quarterly review. Revenue is up twelve percent.",
+        "Next, we will hire two engineers before the end of the year."
+      ],
+      "audio": "speech+music",
+      "expect": {
+        "ingest_state": "fill",
+        "coverage_audio": "yes",
+        "transcript_source": "asr",
+        "speech_attempts": "1 or 2 (a second attempt without the VAD filter when the first finds nothing)",
+        "on_screen_text": ["Quarterly review"],
+        "notes": "Never a quiet frames-only document: a transcript, or needs_decision."
+      }
+    },
+    {
+      "id": "silent-slides",
+      "summary": "Slides with an audio track that carries nothing (a muted microphone).",
+      "slides": [
+        {"title": "Architecture", "lines": ["API -> Queue -> Worker"]},
+        {"title": "Failure modes", "lines": ["Queue backlog", "Worker crash loop"]}
+      ],
+      "speech": [],
+      "audio": "silence",
+      "expect": {
+        "ingest_state": "needs_decision",
+        "decision_reason": "no_speech_found",
+        "speech_attempts": 1,
+        "after_frames_only": {"coverage_audio": "no", "banner": "Frames only"},
+        "on_screen_text": ["Architecture"],
+        "notes": "The agent must ask the user, not pick --allow-frames-only by itself."
+      }
+    }
+  ]
+}

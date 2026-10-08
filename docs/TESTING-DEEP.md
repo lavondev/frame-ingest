@@ -229,14 +229,19 @@ instead of `/frame-ingest` below.
 What a correct run looks like:
 
 1. It tells you that the frames and transcript it reads go to the model behind Claude Code.
-2. It runs `fi doctor`, `fi estimate`, then `fi prepare` (no permission prompt for these: the
-   skill pre-approves only its own launcher).
+2. It runs `scripts/fi ingest` by its full path (no permission prompt: the skill pre-approves only
+   its own launcher). From then on it reuses the `fi_path` the task card returns; it never types
+   `${CLAUDE_SKILL_DIR}`.
 3. It opens the contact sheet image(s) and describes what it sees.
-4. Claude Code **asks permission to write files** under `~/.frame-ingest/jobs/.../agent/out/`.
-   That is expected. Approve them.
-5. It runs `fi assemble`; if it reports problems, it fixes them and tries again.
-6. It runs `fi validate` and `fi scan`, then replies with the document path, the TL;DR and the
-   chapter list.
+4. Claude Code **asks permission to edit files** under `~/.frame-ingest/jobs/.../agent/out/`
+   (the prefilled templates). That is expected. Approve them.
+5. It runs `fi check` on each file until it says ok, then `fi finish`.
+6. It replies with the document path, the TL;DR, the chapter list and a coverage line such as
+   `audio yes · transcript captions · frames 5/5 analysed`.
+
+Without the caption file, a video with speech is transcribed on your machine. If the speech
+model is missing or finds nothing, it must stop and ask you what to do instead of finishing
+quietly from the frames alone. More cases with known answers: the "Evals" section of the README.
 
 Open the document it points to and check it reads sensibly and cites timestamps.
 
