@@ -77,6 +77,8 @@ ignore = ["RUF001", "RUF002", "RUF003", "RUF012"]
 "tests/*" = ["S101", "S603", "S607", "E501", "SIM117", "B017", "RUF007"]
 # Eval tooling runs ffmpeg and text-to-speech on our own generated inputs.
 "evals/*" = ["S603", "S607"]
+# README artwork: the SVG templates are long inline strings.
+"scripts/gen_assets.py" = ["E501"]
 
 [tool.mypy]
 python_version = "3.11"
