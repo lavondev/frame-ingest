@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1040" height="190" viewBox="0 0 1040 190" role="img" aria-label="Data flow: video, ingest on your machine, your model writes, finish builds the document">
+  <title>Data flow: video, ingest on your machine, your model writes, finish builds the document</title>
+  <defs>
+    <marker id="ah" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10Z" fill="#5B6479"/></marker>
+  </defs>
+  <g transform="translate(20.0 24)">
+    <rect width="210" height="92" rx="16" fill="#FFFFFF" stroke="#5B6479" stroke-width="2.5"/>
+    <text x="105.0" y="38" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,'Liberation Mono',monospace" font-size="22" font-weight="700" fill="#5B6479">video</text>
+    <text x="105.0" y="62" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="13.5" fill="#121829">a file or a URL</text>
+    <text x="105.0" y="80" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="13.5" fill="#5B6479"></text>
+  </g>
+  <g transform="translate(283.3 24)">
+    <rect width="210" height="92" rx="16" fill="#FFFFFF" stroke="#E8731A" stroke-width="2.5"/>
+    <text x="105.0" y="38" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,'Liberation Mono',monospace" font-size="22" font-weight="700" fill="#E8731A">ingest</text>
+    <text x="105.0" y="62" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="13.5" fill="#121829">runs on your machine</text>
+    <text x="105.0" y="80" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="13.5" fill="#5B6479">transcript + key frames</text>
+  </g>
+  <g transform="translate(546.7 24)">
+    <rect width="210" height="92" rx="16" fill="#FFFFFF" stroke="#0E9F8E" stroke-width="2.5"/>
+    <text x="105.0" y="38" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,'Liberation Mono',monospace" font-size="22" font-weight="700" fill="#0E9F8E">write</text>
+    <text x="105.0" y="62" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="13.5" fill="#121829">your agent's model</text>
+    <text x="105.0" y="80" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="13.5" fill="#5B6479">reads frames, fixes the text</text>
+  </g>
+  <g transform="translate(810.0 24)">
+    <rect width="210" height="92" rx="16" fill="#FFFFFF" stroke="#E8731A" stroke-width="2.5"/>
+    <text x="105.0" y="38" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,'Liberation Mono',monospace" font-size="22" font-weight="700" fill="#E8731A">finish</text>
+    <text x="105.0" y="62" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="13.5" fill="#121829">checks and builds</text>
+    <text x="105.0" y="80" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="13.5" fill="#5B6479">citable Markdown + JSON</text>
+  </g>
+  <path d="M236.0 70.0L277.3333333333333 70.0" stroke="#5B6479" stroke-width="2" fill="none" marker-end="url(#ah)"/>
+  <path d="M499.3333333333333 70.0L540.6666666666666 70.0" stroke="#5B6479" stroke-width="2" fill="none" marker-end="url(#ah)"/>
+  <path d="M762.6666666666666 70.0L804.0 70.0" stroke="#5B6479" stroke-width="2" fill="none" marker-end="url(#ah)"/>
+  <g font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="13.5" fill="#5B6479">
+    <rect x="20" y="150" width="14" height="14" rx="4" fill="none" stroke="#E8731A" stroke-width="2.5"/><text x="42" y="162">plain code, runs locally</text>
+    <rect x="260" y="150" width="14" height="14" rx="4" fill="none" stroke="#0E9F8E" stroke-width="2.5"/><text x="282" y="162">the model already running your agent</text>
+  </g>
+</svg>

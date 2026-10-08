@@ -5,5 +5,4 @@
   ffmpeg; real speech needs `say` or `espeak-ng`, otherwise a tone stands in.
 - `score.py`: grades a run from what is on disk (jobs are found by the video's content hash).
 
-How to run them, offline and by hand in Claude Code and Codex: the "Evals" section of the
-repository README.
+How to run them, offline and by hand in Claude Code and Codex: [`docs/EVALS.md`](../docs/EVALS.md).

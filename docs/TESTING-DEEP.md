@@ -241,7 +241,7 @@ What a correct run looks like:
 
 Without the caption file, a video with speech is transcribed on your machine. If the speech
 model is missing or finds nothing, it must stop and ask you what to do instead of finishing
-quietly from the frames alone. More cases with known answers: the "Evals" section of the README.
+quietly from the frames alone. More cases with known answers: [`EVALS.md`](EVALS.md).
 
 Open the document it points to and check it reads sensibly and cites timestamps.
 
