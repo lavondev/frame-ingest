@@ -39,8 +39,8 @@ from pydantic import ValidationError
 from frame_ingest import __version__
 from frame_ingest.agent.assemble_agent import ValidationFailed, assemble_job
 from frame_ingest.agent.check import CheckRefused, check_file, check_job
+from frame_ingest.agent.flow import document_summary, task_card
 from frame_ingest.agent.flow import finish as finish_job
-from frame_ingest.agent.flow import task_card
 from frame_ingest.agent.prepare import prepare as prepare_pack
 from frame_ingest.agent.validate_doc import (
     read_document,
@@ -247,7 +247,7 @@ async def _job_for(
         if settings is not None:
             raise _usage("--frame-cap, --language and --diarize apply only when creating a job.")
         job = engine.load(args.job)
-        if profile and job.profile not in (None, profile):
+        if profile and job.profile not in (None, "agent", profile):  # agent mode sends nothing
             raise _usage(f"Job {job.id} was created with profile '{job.profile}', not '{profile}'.")
         return job
     if args.input is None:
@@ -572,21 +572,48 @@ def fi_path() -> str:
     return shutil.which("frame-ingest") or "frame-ingest"
 
 
+AGENT_ONLY = ("captions", "cloud_speech", "allow_frames_only", "dense", "start", "end")
+
+
+def ingest_mode(args: argparse.Namespace, config: AppConfig) -> str:
+    """Who does the looking. No profile: agent mode, whatever keys are set (a key is not
+    consent). `--profile local`: local models. `--profile cloud`: a key and `--allow-egress` (or a
+    yes on a terminal); never chosen automatically."""
+    mode: str = args.profile or "agent"
+    if mode != "agent":
+        used = [f"--{a.replace('_', '-')}" for a in AGENT_ONLY if getattr(args, a, None)]
+        if used:
+            raise _usage(f"{', '.join(used)} only apply in agent mode (no --profile).")
+    elif args.allow_egress and not args.cloud_speech:
+        raise _usage("--allow-egress goes with --cloud-speech, or with --profile cloud.")
+    if mode == "cloud" and not all(config.key_for(r) for r in ("transcribe", "vision", "text")):
+        raise FatalProviderError(config.missing_key_message(), code="missing_api_key", status=400)
+    return mode
+
+
 async def _cmd_ingest(args: argparse.Namespace, config: AppConfig) -> Result:
-    """doctor + estimate + probe + transcribe + frames + sheets + templates, in one call."""
+    """doctor + estimate + probe + transcribe + frames + sheets + templates, in one call (agent
+    mode), or the whole pipeline with local or cloud models (`--profile`)."""
+    mode = ingest_mode(args, config)
     memo = CapabilityMemo(config.data_root / "capabilities.json")
     report = await run_doctor(config, memo, online=False)
+    if mode == "local":
+        report.checks += await check_local(config)
+        report.ok = report.ok and all(c.ok for c in report.checks)
     if not report.ok:
         failed = [c for c in report.checks if not c.ok]
         message = "; ".join(c.message for c in failed)
         payload = {
             "ok": False,
             "state": "doctor",
+            "mode": mode,
             "error": {"code": "doctor_failed", "message": message},
             "report": report_dict(report),
         }
         lines = [f"FAIL {c.name}: {c.message}" for c in failed]
         return Result(payload, lines, EXIT_UNAVAILABLE, error=message)
+    if mode != "agent":
+        return await _ingest_pipeline(args, config, mode)
     engine = _engine(config)
     job = await _job_for(args, engine, _settings(args))
     est = await engine.estimate(job.id)
@@ -599,6 +626,25 @@ async def _cmd_ingest(args: argparse.Namespace, config: AppConfig) -> Result:
     }
     card["doctor_warnings"] = report.warnings
     return _card_result(card)
+
+
+async def _ingest_pipeline(args: argparse.Namespace, config: AppConfig, mode: str) -> Result:
+    """`ingest --profile local|cloud`: `run` (egress plan, consent, pipeline), then the same
+    validate + scan summary that `finish` gives."""
+    run_args = argparse.Namespace(
+        **{**vars(args), "profile": mode, "offline": False, "max_cost": None, "metrics": False}
+    )
+    result = await _cmd_run(run_args, config)
+    if result.exit_code != EXIT_OK:
+        result.payload["state"] = "failed"
+        return result
+    resolved = resolve_profile(mode, config)
+    engine = _engine(resolved.config, resolved.factory)
+    job = engine.load(result.payload["job_id"])
+    summary = document_summary(engine, job, fi_path())
+    summary.update(mode=mode, egress=result.payload["egress"])
+    lines = [f"document: {summary['document']}", summary["coverage_line"] or ""]
+    return Result(summary, lines, EXIT_OK if summary["ok"] else EXIT_FAILED)
 
 
 async def _cmd_next(args: argparse.Namespace, config: AppConfig) -> Result:
@@ -832,12 +878,18 @@ def build_parser() -> argparse.ArgumentParser:
 
     ingest = subs.add_parser(
         "ingest",
-        help="agent mode, one call: check, probe, transcribe, frames, sheets and templates; "
-        "returns a task card with the next command",
+        help="one call: check, probe, transcribe, frames, sheets and templates; returns a task "
+        "card with the next command (agent mode unless --profile local|cloud)",
     )
     _add_common(ingest)
     _add_input(ingest, profile=False)
     _add_prepare(ingest)
+    ingest.add_argument(
+        "--profile",
+        choices=("agent", "local", "cloud"),
+        help="who reads the frames: you (agent, the default), local models, or cloud models "
+        "(cloud needs a key and --allow-egress after the user agrees)",
+    )
 
     next_ = subs.add_parser("next", help="agent mode: where a job stands and the next command")
     _add_common(next_)

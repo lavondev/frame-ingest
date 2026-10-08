@@ -553,6 +553,7 @@ REVIEWED_FLAGS = {
     "check": {"-h", "--help", "--json", "target"},
     "ingest": {
         *_INPUT,
+        "--profile",
         "--captions",
         "--dense",
         "--start",
