@@ -136,6 +136,7 @@ def test_skill_md_is_short_and_never_asks_for_a_shell_variable() -> None:
         assert marker not in body, marker
     assert "fi_path" in body and "scripts/fi" in body
     assert "needs_decision" in body and "Never choose for them" in body
+    assert "reply_markdown" in body and "pasted exactly as given" in body
 
 
 def test_description_front_loads_the_trigger_words() -> None:

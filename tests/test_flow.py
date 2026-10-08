@@ -156,7 +156,7 @@ def test_ingest_check_finish_with_next_driving(
     assert done["coverage_line"].startswith("**Coverage:** audio yes · transcript captions")
     assert done["tldr"] and done["chapters"][0]["anchor"] == "ch-01"
     assert done["validate"] == {"ok": True, "issues": []} and done["scan"]["flags"] == {}
-    assert "coverage line" in done["reply"]
+    assert "reply_markdown" in done["reply"] and done["reply_markdown"].startswith("## ")
 
     code, card = cli(capsys, "next", card["job_id"])
     assert card["state"] == "done" and card["next"] is None and card["document"] == done["document"]

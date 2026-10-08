@@ -158,6 +158,14 @@ def _job_jail(tmp_path_factory: pytest.TempPathFactory) -> Iterator[None]:
 
 
 @pytest.fixture(autouse=True)
+def _in_a_temp_folder(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """`finish` copies documents into ./frame-ingest-out/; never into the repository."""
+    work = tmp_path / "session-folder"
+    work.mkdir(exist_ok=True)
+    monkeypatch.chdir(work)
+
+
+@pytest.fixture(autouse=True)
 def _no_real_speech_model(monkeypatch: pytest.MonkeyPatch) -> None:
     """The real faster-whisper downloads model weights from the network on first use, so tests
     never see it: importing it fails (as when the `local` extra is missing) unless a test installs
