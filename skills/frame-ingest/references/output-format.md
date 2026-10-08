@@ -31,6 +31,10 @@ Anchors: chapters `ch-NN`, chapter sections `ch-NN-<section>`, transcript lines 
 (`-2`, `-3` on collisions). Cite as `[00:01:25](#t-000125)` or `[Chapter 2](#ch-02)`.
 Timestamps are always `HH:MM:SS` and never exceed the video duration.
 
+`finish` also copies the document to `frame-ingest-out/<video name>.md` in the current folder (a
+copy the harness can preview; the original stays in the job folder) and returns
+`reply_markdown`, the compact summary to send back unchanged.
+
 `coverage` says what the document actually covers, computed in code: `audio: 'yes'` means it
 includes what was said (from captions or speech-to-text). A document with `audio: 'no'` always
 carries the "Frames only" banner, and `validate` rejects one that does not.

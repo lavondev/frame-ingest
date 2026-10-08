@@ -92,8 +92,15 @@ def placeholder_problem(rel: str, paths: list[str]) -> Problem:
 
 
 # ── vision/batch-NN.json ────────────────────────────────────────────────────────
-def frame_names(raw: Any) -> list[str]:
-    """Frame names in a vision file, read leniently (used to spot duplicates across files)."""
+def frame_names(path: Path) -> list[str]:
+    """Frame names in a vision file, read leniently (to see which frames other files cover).
+    Same limits as a checked file: no symlinks, at most MAX_OUT_BYTES; unreadable means none."""
+    try:
+        if path.stat().st_size > MAX_OUT_BYTES:
+            return []
+        raw = json.loads(read_bytes_nofollow(path).decode("utf-8"))
+    except (PathRejected, OSError, UnicodeDecodeError, ValueError):
+        return []
     frames = raw.get("frames") if isinstance(raw, dict) else None
     if not isinstance(frames, list):
         return []

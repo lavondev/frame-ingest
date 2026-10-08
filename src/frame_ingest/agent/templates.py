@@ -124,12 +124,7 @@ def _vision_templates(
             )
             index.vision[rel] = names
         return
-    covered: set[str] = set()
-    for rel in existing:
-        try:
-            covered.update(frame_names(json.loads((out_dir / rel).read_text(encoding="utf-8"))))
-        except (OSError, ValueError):
-            continue
+    covered = {name for rel in existing for name in frame_names(out_dir / rel)}
     new = [f for f in frames if f.name not in covered]
     if not new:
         return

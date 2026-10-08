@@ -8,7 +8,6 @@ unrelated file.
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Any
 
@@ -129,12 +128,8 @@ def _check(j: _Job, rel: str) -> dict[str, Any]:
                 seen: dict[str, str] = {}
                 for other in sorted((j.out / "vision").glob("*.json")):
                     other_rel = f"vision/{other.name}"
-                    if other_rel != rel and not other.is_symlink():
-                        try:
-                            names = frame_names(json.loads(other.read_text(encoding="utf-8")))
-                        except (OSError, ValueError):
-                            continue
-                        seen.update({n: other_rel for n in names})
+                    if other_rel != rel:
+                        seen.update({n: other_rel for n in frame_names(other)})
                 expected = j.index.vision.get(rel)
                 _, found = check_vision(batch, rel, j.frames, seen, expected)
                 problems += found
@@ -193,11 +188,8 @@ def check_job(engine: Engine, job_id: str) -> dict[str, Any]:
     problems: list[Problem] = []
     covered: set[str] = set()
     for rel in expected_files(j):
-        if rel.startswith("vision/") and (j.out / rel).is_file():
-            try:
-                covered.update(frame_names(json.loads((j.out / rel).read_text(encoding="utf-8"))))
-            except (OSError, ValueError):
-                continue
+        if rel.startswith("vision/"):
+            covered.update(frame_names(j.out / rel))
     missing = missing_frames_problem(n for n in j.frames if n not in covered)
     if missing:
         problems.append(missing)

@@ -38,6 +38,7 @@ prevented).
 | Egress plan and consent, `--offline`, `--max-cost` | `egress.py`, `guard/netblock.py`, `budget.py` | `tests/test_providers.py` |
 | Secrets stay out of outputs and logs | `errors.py`, `config.py` | `tests/test_security.py` |
 | Export confinement | `export.py` | `tests/test_extras.py` |
+| Preview copy (fixed `./frame-ingest-out/`, export root rules, no foreign overwrite) and the code-built reply (neutralised text) | `agent/reply.py` | `tests/test_reply.py` |
 | Flag review (no flag executes code, writes outside the jail or reveals a secret) | `cli.py` | `tests/test_security.py::test_flag_enumeration_*` |
 | Release integrity (pinned actions, OIDC, attestations, checksums) | `.github/workflows/` | `tests/test_packaging.py` |
 

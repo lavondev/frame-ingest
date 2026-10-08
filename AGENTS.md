@@ -51,7 +51,9 @@ Supabase sync and `.env` loading were dropped. Design rationale: `docs/ARCHITECT
   `agent/flow.py` is the state machine behind `ingest` / `next` / `finish` (task card,
   `fi_path` from the launcher's `FRAME_INGEST_LAUNCHER`, shell-quoted next commands). Job ids
   are the first 12 hex digits of the content sha256 (`engine.create_or_reuse`), so every
-  command sees the same job for the same video.
+  command sees the same job for the same video. `agent/reply.py` builds the final chat reply
+  in code and copies the document to `./frame-ingest-out/` (the one default write outside
+  <home>, under the export rules; config `preview_copy`).
 - M3/M7/M8 additions: `fetch/` (`policy.py` URL policy, `http.py` pinned-IP fetcher, `ytdlp.py` +
   `guard/ytdlp_args.py` hardened yt-dlp, `proxy.py` connect-time egress guard, `acquire.py` URL to
   local file); `guard/sandbox.py` (OS sandbox for ffmpeg, config `sandbox`); `export.py`

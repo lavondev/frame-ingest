@@ -96,6 +96,9 @@ class AppConfig(BaseModel):
     # to parallel subagents (guidance only; the CLI never starts an agent)
     long_video_minutes: float = Field(20.0, gt=0)
     long_video_max_groups: int = Field(8, ge=1, le=64)
+    # Copy each finished document to ./frame-ingest-out/ in the current folder, where the agent's
+    # harness can preview it (agent/reply.py has the rules); false keeps it in the job folder only
+    preview_copy: bool = True
 
     # OS sandbox for ffmpeg (PLAN T3): off, auto (use it when it works), require (refuse without)
     sandbox: Literal["off", "auto", "require"] = "auto"

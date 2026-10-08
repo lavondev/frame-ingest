@@ -17,7 +17,10 @@ Full model: `docs/PLAN.md` section 4 in the repository.
   it sniffed, allows only local files and pipes, and runs it with a scrubbed environment,
   timeouts and output caps.
 - **Writes stay in the job directory** (`~/.frame-ingest/jobs/<id>/`, or under
-  `FRAME_INGEST_HOME`). No flag chooses where to write.
+  `FRAME_INGEST_HOME`), with one exception: `finish` copies the document to `frame-ingest-out/`
+  in the current folder so the user can preview it. That name is fixed, no flag chooses where to
+  write, symlinks and system or hidden locations are refused, a file from another video is never
+  overwritten, and `preview_copy: false` in the config turns it off.
 - **Secrets** come from the environment only and are never written to outputs or logs. `.env`
   files are never read. Agent mode needs no key.
 - **Egress.** In agent mode the CLI sends nothing (the first local transcription downloads a
