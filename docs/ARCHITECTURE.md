@@ -44,8 +44,11 @@ than 2×/0.5×. `raw_text` is never modified, and every change is written to a d
 - **Inspectable and cacheable.** Frames are files; vision batches are cached per batch; a failed batch
   is a visible gap rather than an opaque failure.
 - **Right sampling for this content.** Talks, demos and screen recordings are mostly static between
-  events. Scene-change detection finds the events; a coverage interval covers static stretches;
-  perceptual-hash dedupe removes repeats. The audio track carries continuous information, so nothing is
+  events. Scene-change detection finds the events, and still-screen detection (ffmpeg
+  `freezedetect`) finds the slide or screen changes that only change text, which the scene score
+  misses; a coverage interval covers static stretches and the end of the video; perceptual-hash
+  dedupe removes repeats, confirmed by a pixel difference on screen-like frames so a changed line of
+  text is not taken for a repeat. The audio track carries continuous information, so nothing is
   lost by not sending every frame. (Fast-motion footage without narration is where this approach is
   weakest; raise the frame cap and sensitivity.)
 

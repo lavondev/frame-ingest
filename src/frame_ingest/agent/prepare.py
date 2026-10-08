@@ -61,7 +61,10 @@ class FrameRegistry(BaseModel):
 
 def frame_settings(job: Job) -> str:
     s = job.settings
-    return f"cap={s.frame_cap} scene={s.scene_threshold} interval={s.min_interval_s}"
+    return (
+        f"v{frames_stage.VERSION} cap={s.frame_cap} scene={s.scene_threshold} "
+        f"interval={s.min_interval_s}"
+    )
 
 
 def load_registry(job_dir: Path) -> FrameRegistry | None:

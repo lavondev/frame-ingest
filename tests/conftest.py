@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from PIL import Image, ImageDraw, ImageFont
 
 from frame_ingest.config import AppConfig, load_config
 from frame_ingest.ffmpeg import ffmpeg_exe
@@ -137,6 +138,56 @@ def long_audio_video(tmp_path_factory: pytest.TempPathFactory) -> Path:
         ]
     )
     return out
+
+
+TEXT_SLIDES = [
+    ["Cache settings", "Default size: 256 MB"],
+    ["Cache settings", "Default size: 256 MB", "Maximum size: 4 GB"],
+    ["Cache settings", "Default size: 512 MB", "Maximum size: 4 GB"],
+]
+
+
+@pytest.fixture(scope="session")
+def text_slides_video(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """18 s, 640x360: three 6 s slides on the same dark background whose only difference is
+    their text (a line is added at 6 s, one number changes at 12 s), like evals/make_fixtures.py.
+    Too subtle for the scene score; the case still-screen detection exists for."""
+    root = tmp_path_factory.mktemp("media")
+    inputs: list[str] = []
+    for i, lines in enumerate(TEXT_SLIDES):
+        img = Image.new("RGB", (640, 360), (16, 24, 32))
+        draw = ImageDraw.Draw(img)
+        for j, line in enumerate(lines):
+            size = 40 if j == 0 else 28
+            draw.text((40, 40 + j * 70), line, fill=(255, 255, 255), font=_font(size))
+        png = root / f"slide-{i}.png"
+        img.save(png)
+        inputs += ["-loop", "1", "-t", "6", "-i", str(png)]
+    out = root / "text-slides.mp4"
+    _run(
+        [
+            *inputs,
+            "-filter_complex",
+            "[0:v][1:v][2:v]concat=n=3:v=1:a=0,format=yuv420p[v]",
+            "-map",
+            "[v]",
+            "-r",
+            "10",
+            "-c:v",
+            "mpeg4",
+            "-q:v",
+            "4",
+            str(out),
+        ]
+    )
+    return out
+
+
+def _font(size: int) -> ImageFont.ImageFont | ImageFont.FreeTypeFont:
+    try:
+        return ImageFont.load_default(size=size)
+    except (TypeError, OSError):  # pragma: no cover - very old Pillow or no FreeType
+        return ImageFont.load_default()
 
 
 @pytest.fixture

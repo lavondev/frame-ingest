@@ -115,6 +115,16 @@ class AppConfig(BaseModel):
     min_interval_s: float = Field(10.0, ge=1)
     max_image_px: int = Field(1024, ge=128, le=4096)
     dedupe_hash_distance: int = Field(5, ge=0, le=32)
+    # screen-like frames (slides, screen recordings) whose pHash matches are only duplicates when
+    # fewer than this share of a 160x90 grayscale thumbnail changed (a changed number is ~0.15%;
+    # 0: pHash alone)
+    dedupe_pixel_fraction: float = Field(0.0008, ge=0, le=1)
+    # a still stretch at least this long that starts after the picture changed is a new screen,
+    # which catches text-only slide changes the scene score misses (0 turns it off). "Still" is a
+    # frame difference below still_noise_db (ffmpeg freezedetect at 320 px wide): one changed
+    # number on a slide is about -62 dB, H.264 keyframe noise on a static screen about -75 dB
+    still_min_s: float = Field(2.0, ge=0, le=60)
+    still_noise_db: float = Field(-66.0, ge=-90, le=-20)
 
     # audio / transcription
     audio_format: str = "ogg"  # ogg (opus) | mp3
