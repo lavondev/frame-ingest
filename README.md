@@ -78,7 +78,7 @@ Download `frame-ingest-<version>.skill` from a release (a zip; verify it against
 </details>
 
 > [!NOTE]
-> **Pre-alpha.** Feature complete and tested offline, not yet field-tested against real providers and harnesses. Details in [`docs/PLAN.md`](docs/PLAN.md).
+> **Pre-alpha.** Feature complete and tested offline, not yet field-tested against real providers and harnesses.
 
 ## What you get
 
@@ -103,9 +103,7 @@ Videos without captions are transcribed on your own machine, and nothing is uplo
 
 ## Learn more
 
-- [Usage](docs/USAGE.md): by hand, and pipeline mode for long videos (cloud or fully local)
-- [Evals](docs/EVALS.md): check that a model actually follows the skill
-- [Architecture](docs/ARCHITECTURE.md) · [Hardened design](docs/HARDENED-ARCHITECTURE.md) · [Plan](docs/PLAN.md) · [Testing](docs/TESTING.md) · [Deep testing](docs/TESTING-DEEP.md)
+- [Testing](docs/TESTING.md) · [Deep testing](docs/TESTING-DEEP.md) · [Threat model review](docs/THREAT-MODEL-REVIEW.md)
 - [Security](SECURITY.md) · [Agent instructions](AGENTS.md)
 
 <details>
