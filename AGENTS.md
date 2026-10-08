@@ -43,6 +43,11 @@ Supabase sync and `.env` loading were dropped. Design rationale: `docs/ARCHITECT
   guards and runs the same `assemble` stage; `validate_doc.py` backs `validate` and `scan`.
   `tests/test_agent.py` drives the whole loop with a scripted stand-in agent. Regenerate the
   published schemas with `UPDATE_SCHEMAS=1 uv run pytest tests/test_agent.py`.
+- Hardened agent mode (`docs/HARDENED-ARCHITECTURE.md`): `agent/audio.py` is the audio guarantee
+  (captions, local ASR, a VAD-free retry when `pipeline/loudness.py` says the track is not
+  silent, else `needs_decision`, exit 6; state in `agent/audio.json`); `agent/templates.py`
+  writes the prefilled `TODO:` templates; `agent/checks.py` holds the per-file validators that
+  both `assemble` and `check` (`agent/check.py`) use. Never add a second set of validators.
 - M3/M7/M8 additions: `fetch/` (`policy.py` URL policy, `http.py` pinned-IP fetcher, `ytdlp.py` +
   `guard/ytdlp_args.py` hardened yt-dlp, `proxy.py` connect-time egress guard, `acquire.py` URL to
   local file); `guard/sandbox.py` (OS sandbox for ffmpeg, config `sandbox`); `export.py`

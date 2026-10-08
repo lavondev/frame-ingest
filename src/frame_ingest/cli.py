@@ -36,6 +36,7 @@ from pydantic import ValidationError
 
 from frame_ingest import __version__
 from frame_ingest.agent.assemble_agent import ValidationFailed, assemble_job
+from frame_ingest.agent.check import CheckRefused, check_file, check_job
 from frame_ingest.agent.prepare import prepare as prepare_pack
 from frame_ingest.agent.validate_doc import (
     read_document,
@@ -107,7 +108,7 @@ class Result:
 
 
 def _exit_code_for(exc: FrameIngestError) -> int:
-    if isinstance(exc, InputRejected | MediaError | PathRejected | UrlRejected):
+    if isinstance(exc, InputRejected | MediaError | PathRejected | UrlRejected | CheckRefused):
         return EXIT_INPUT
     if isinstance(exc, JobNotFound):
         return EXIT_NOT_FOUND
@@ -535,6 +536,30 @@ async def _cmd_assemble(args: argparse.Namespace, config: AppConfig) -> Result:
     return Result(payload, lines)
 
 
+def _problem_lines(problems: list[dict[str, str]], indent: str) -> list[str]:
+    return [f"{indent}{p['file']} {p['path']}: {p['message']} [{p['rule']}]" for p in problems]
+
+
+async def _cmd_check(args: argparse.Namespace, config: AppConfig) -> Result:
+    engine = _engine(config)
+    target = _stdin_or(args.target)
+    if engine.store.exists(target):
+        report = check_job(engine, target)
+        lines = [f"job {target}: {report['status']}"]
+        for f in report["files"]:
+            todo = f" ({f['todo']['count']} TODO left)" if f["todo"]["count"] else ""
+            lines.append(f"  {f['status']:<10} {f['file']}{todo}")
+            lines += _problem_lines(f["problems"], "    ")
+        lines += _problem_lines(report["problems"], "  ")
+    else:
+        report = check_file(engine, target)
+        todo = f", {report['todo']['count']} TODO left" if report["todo"]["count"] else ""
+        lines = [f"{report['status']}{todo}: {report['file']}"]
+        lines += _problem_lines(report["problems"], "  ")
+        lines += [f"  warning: {w}" for w in report["warnings"]]
+    return Result(report, lines, EXIT_OK if report["ok"] else EXIT_FAILED)
+
+
 async def _cmd_export(args: argparse.Namespace, config: AppConfig) -> Result:
     engine = _engine(config)
     job = engine.load(args.job)
@@ -580,6 +605,7 @@ async def _cmd_scan(args: argparse.Namespace, config: AppConfig) -> Result:
 
 
 _HANDLERS = {
+    "check": _cmd_check,
     "export": _cmd_export,
     "fetch": _cmd_fetch,
     "prepare": _cmd_prepare,
@@ -721,6 +747,14 @@ def build_parser() -> argparse.ArgumentParser:
     assemble.add_argument("job", help="job id from `prepare`")
     assemble.add_argument(
         "--metrics", action="store_true", help="add pacing and hook metrics (deterministic)"
+    )
+
+    check = subs.add_parser(
+        "check", help="agent mode: validate one output file (or every file of a job) right away"
+    )
+    _add_common(check)
+    check.add_argument(
+        "target", help="an agent file under <job>/agent/out/, or a job id ('-' reads stdin)"
     )
 
     export = subs.add_parser(

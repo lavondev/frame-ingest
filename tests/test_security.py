@@ -550,6 +550,7 @@ REVIEWED_FLAGS = {
     "assemble": {"-h", "--help", "--json", "job", "--metrics"},
     "validate": {"-h", "--help", "--json", "document"},
     "scan": {"-h", "--help", "--json", "target"},
+    "check": {"-h", "--help", "--json", "target"},
 }
 FORBIDDEN = re.compile(
     r"exec|cookie|shell|cmd|command|script|plugin|config|home|out(put)?$|dir|path|key|token|"

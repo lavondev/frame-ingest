@@ -32,6 +32,7 @@ from frame_ingest.agent.audio import (
 from frame_ingest.agent.common import PrepareError, agent_context, agent_dir, video_of
 from frame_ingest.agent.schemas import SCHEMAS
 from frame_ingest.agent.sheets import build_sheet
+from frame_ingest.agent.templates import write_templates
 from frame_ingest.engine import Engine
 from frame_ingest.guard.paths import job_jail
 from frame_ingest.models import FrameInfo, Job, ProcessingWarning, Segment, Transcript
@@ -188,6 +189,16 @@ async def prepare(
         save_status(job_dir, audio)
 
         manifest = _build_manifest(engine, job, registry, transcript, audio, adir, drilled)
+        manifest["templates"] = None
+        if manifest["status"] == "ready":  # nothing to fill before the user has decided
+            manifest["templates"] = write_templates(
+                adir,
+                frames=sorted(registry.frames, key=lambda f: f.t),
+                sheets=manifest["sheets"],
+                segments=transcript.segments,
+                duration=video_of(job).duration_s,
+                max_chapters=engine.config.max_chapters,
+            )
         atomic_write_text(adir / "manifest.json", _dumps(manifest))
     return manifest
 
@@ -305,12 +316,14 @@ def _build_manifest(
             "vision": {
                 "write": str(out_dir / "vision" / "batch-NN.json"),
                 "schema": "vision-batch",
-                "rule": "One entry per frame, using the exact frame names; every frame once.",
+                "rule": "One entry per frame, using the exact frame names; every frame once. "
+                "Fill the batch-NN.json templates; do not rename frames.",
             },
             "corrections": {
                 "write": str(out_dir / "corrections.json"),
                 "schema": "corrections",
-                "rule": "Exactly the segment ids in transcript.json; omit only if no transcript.",
+                "rule": "Exactly the segment ids in transcript.json; omit only if no transcript. "
+                "The template starts from the raw text: fix words, then delete its todo line.",
             },
             "synthesis": {
                 "write": str(out_dir / "synthesis.json"),
@@ -323,9 +336,9 @@ def _build_manifest(
         },
         "schemas": sorted(SCHEMAS),
         "next": [
-            "Read the sheets (and frames when a sheet is not enough) and write vision/*.json.",
-            "Read the transcript windows and write corrections.json.",
-            "Write synthesis.json, then run: assemble <job_id>, then validate <document>.",
+            "Fill the templates under out/ (replace every TODO: string), reading the sheets and "
+            "the transcript; run `check <file>` after each one until it says ok.",
+            "Then run: finish <job_id> (or assemble <job_id>, validate, scan).",
             "For a dense or unclear stretch: prepare --job <job_id> --dense --start S --end E.",
         ],
     }
