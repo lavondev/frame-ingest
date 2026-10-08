@@ -35,9 +35,11 @@ if command -v uvx >/dev/null 2>&1; then
 fi
 
 cat >&2 <<'MSG'
-error: the frame-ingest CLI is not installed.
-Install uv (https://docs.astral.sh/uv/), then from a checkout of the repository run:
-    ./scripts/install.sh
-Then run the command again.
+error: frame-ingest needs uv, and uv is not installed.
+uv is a small tool that sets up Python and this CLI for you. Install it (about ten seconds),
+then run the command again:
+    macOS:  brew install uv
+    other:  pipx install uv      (or see https://docs.astral.sh/uv/getting-started/installation/)
+If you cloned the repository, run ./scripts/install.sh once uv is installed.
 MSG
 exit 4
