@@ -18,11 +18,20 @@
 
 ## Install
 
+frame-ingest needs [uv](https://docs.astral.sh/uv/), a small tool that sets up Python and the CLI for you. Skip this step if you already have it (`uv --version`). Otherwise it takes about ten seconds:
+
+```bash
+brew install uv                                    # macOS
+curl -LsSf https://astral.sh/uv/install.sh | sh    # Linux and macOS
+```
+
+Then install the skill:
+
 ```bash
 npx skills add lavondev/frame-ingest
 ```
 
-Needs [uv](https://docs.astral.sh/uv/). Then ask your agent to run it:
+Then ask your agent to run it:
 
 | Agent | Command |
 |---|---|
