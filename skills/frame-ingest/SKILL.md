@@ -4,7 +4,7 @@ license: MIT
 description: Video, recording, lecture, meeting, screen recording or YouTube/URL into a structured, citable Markdown document (corrected transcript, chapters, summaries, verbatim quotes, glossary, entity index). Use when the user gives a video file or a video link (YouTube, Vimeo, a direct .mp4), a screen recording, lecture, talk, webinar, tutorial, demo or meeting recording and wants to watch, understand, summarize, search, take notes on, quote or cite it, or says "frame-ingest". Needs no API key - speech is transcribed on this machine and you read the frames.
 compatibility: Needs uv (https://docs.astral.sh/uv/); the launcher sets up the CLI with local speech-to-text and URL support. Works in Claude Code, Codex and other Agent Skills harnesses.
 metadata:
-  version: "0.1.0"
+  version: "0.2.0"
   status: pre-alpha
 allowed-tools: Bash(${CLAUDE_SKILL_DIR}/scripts/fi *) Read
 ---

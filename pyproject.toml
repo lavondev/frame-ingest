@@ -1,6 +1,6 @@
 [project]
 name = "frame-ingest"
-version = "0.1.0"
+version = "0.2.0"
 description = "Turn a video (file or URL) into a structured, citable Markdown document. An Agent Skill plus a CLI."
 readme = "README.md"
 license = "MIT"

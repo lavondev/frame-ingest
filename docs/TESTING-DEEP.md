@@ -25,7 +25,7 @@ Check it is on your PATH:
 frame-ingest --version
 ```
 
-You should see `frame-ingest 0.1.0`. Now the health check:
+You should see `frame-ingest 0.2.0`. Now the health check:
 
 ```bash
 frame-ingest doctor
