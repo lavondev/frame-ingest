@@ -1,4 +1,4 @@
-"""Fetch a direct media URL to a file (PLAN T2).
+"""Fetch a direct media URL to a file.
 
 Our own client, not a library's: every hop (the first request and each redirect) is validated by
 `policy`, and the TCP connection goes to the address that was validated, with the original host

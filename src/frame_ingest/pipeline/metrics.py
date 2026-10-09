@@ -1,4 +1,4 @@
-"""Pacing and hook metrics (docs/PLAN.md M7), computed deterministically from the finished
+"""Pacing and hook metrics, computed deterministically from the finished
 analysis: no model is asked. Opt in with `--metrics`; the numbers go in the JSON sidecar and a
 "Pacing and Hook" section of the document."""
 

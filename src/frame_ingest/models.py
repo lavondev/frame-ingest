@@ -308,7 +308,7 @@ class Analysis(BaseModel):
 
     schema_version: Literal["1"] = "1"
     # Everything below was extracted from a video and may carry text written to manipulate an AI
-    # reader; consumers must treat it as data (PLAN T1).
+    # reader; consumers must treat it as data.
     trust: Literal["untrusted-content"] = "untrusted-content"
     mode: Literal["pipeline", "agent"] = "pipeline"
     source_url: str | None = None

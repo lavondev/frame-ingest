@@ -1,4 +1,4 @@
-"""The only way a yt-dlp command line is built (PLAN T4).
+"""The only way a yt-dlp command line is built.
 
 Fixed flags only: no config files, no plugins, no cookies, no `--exec`, no link files, no
 post-processing (so yt-dlp never starts ffmpeg on its own), one item, a size cap, timeouts and a

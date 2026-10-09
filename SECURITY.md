@@ -39,13 +39,14 @@ Only the latest released minor version receives security fixes while the project
 
 ## Status
 
-The project is pre-alpha and there are no supported releases yet. The threat model and the
+The project is pre-1.0 and has not had an external security review. The threat model and the
 controls (prompt injection through video content, SSRF and hostile URLs, hostile media and
 ffmpeg, yt-dlp advisories, argument injection, path handling, secrets, egress, supply chain) are
 mapped to the code and tests that enforce them in
-[`docs/THREAT-MODEL-REVIEW.md`](docs/THREAT-MODEL-REVIEW.md).
+[`docs/THREAT-MODEL-REVIEW.md`](docs/THREAT-MODEL-REVIEW.md), which also lists the residual
+risks.
 
-Implemented so far (local files only; there is no URL ingest yet):
+Implemented:
 
 - **One process wrapper.** Every child process starts in `guard/subproc.py`: argv list, no shell,
   scrubbed environment (no API keys reach a child), timeout with process-group kill, output caps,
@@ -73,8 +74,24 @@ Implemented so far (local files only; there is no URL ingest yet):
   over-budget or unpriceable run up front and stops a running one at the cap. Because the skill
   pre-approves its launcher with any arguments, SKILL.md tells the agent never to pass
   `--allow-egress` without the user's yes; that instruction is a control, not a guarantee.
-- **No network use** except the OpenAI-compatible provider client, and nothing runs against it
-  yet (`--profile cloud` is not implemented).
+- **URL policy and fetching.** Only http/https, no credentials in the URL, an allowlisted port,
+  and every address the host resolves to must be public (numeric forms such as `0x7f000001` are
+  normalised first). Direct media links use our own client: every redirect hop is validated again,
+  the connection goes to the address that was validated, and there is a size cap and a deadline.
+  ffmpeg never receives a URL.
+- **yt-dlp.** Fixed flags only: no config files, plugins, cookies, `--exec` or link files, and an
+  empty private directory per run. A version floor is enforced in code. It runs behind a
+  loopback proxy that applies the URL policy again to every connection it makes.
+- **OS sandbox for ffmpeg.** `sandbox-exec` on macOS and `bwrap` on Linux: no network, no home
+  directory, writes only in the job directory. The default (`sandbox: auto`) runs unsandboxed
+  when none works and says so in `doctor`; `require` refuses instead.
+- **Writes outside the job directory.** `export` writes only inside roots you list in config,
+  never one given as an argument. The only default write outside the home folder is the preview
+  copy in `./frame-ingest-out/`, which follows the same rules (no symlinks, nothing overwritten,
+  `preview_copy: false` turns it off).
+- **Network use** is confined to the provider client, `doctor` and URL fetching; a test fails if
+  any other module imports a network client.
 
-Not yet implemented: URL fetching and yt-dlp hardening (M3), the egress consent gate and
-`--offline` (M5), OS-level sandboxing (M8).
+Not yet exercised: the real provider clients, the skill under Claude Code or Codex, and a live
+yt-dlp download. The residual risks are listed in
+[`docs/THREAT-MODEL-REVIEW.md`](docs/THREAT-MODEL-REVIEW.md).

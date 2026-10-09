@@ -80,7 +80,7 @@ Instead the transcriber advertises **capabilities**, and the pipeline plans from
   (acceptable for navigation; weaker for subtitle-grade use) in exchange for working with any model.
 - **Unknown capability is probed, not guessed.** If a model rejects `verbose_json`, the transcriber
   flips its capability (remembered in `<home>/capabilities.json`), the runner re-plans audio and
-  transcription with short chunks, and the job continues. `doctor --online` can do this probe
+  transcription with short chunks, and the job continues. `doctor --deep` can do this probe
   up front with a one-second silent clip.
 - Chapter boundaries are validated against the *video duration* regardless of timestamp precision, and
   every timestamp in the Markdown is clamped to it.

@@ -1,4 +1,4 @@
-"""Security suite (docs/PLAN.md section 4.3, the fixtures that apply to local files).
+"""Security suite: the fixtures that apply to local files.
 
 Everything here is offline. Each test names the control it protects.
 """
@@ -61,7 +61,7 @@ def jailed_video(jail: Path, sample_video: Path) -> Path:
     return dest
 
 
-# ── T5: one process wrapper, no shell ───────────────────────────────────────────
+# ── one process wrapper, no shell ───────────────────────────────────────────
 def test_only_the_guard_wrapper_starts_processes() -> None:
     needles = ("subprocess", "create_subprocess", "os.system", "os.popen", "os.exec", "pty.spawn")
     offenders = [
@@ -130,7 +130,7 @@ async def test_process_wrapper_rejects_relative_or_nul_argv() -> None:
         await run_process(["/bin/echo", "a\x00b"], timeout=5)
 
 
-# ── T3: ffmpeg argv builder ─────────────────────────────────────────────────────
+# ── ffmpeg argv builder ─────────────────────────────────────────────────────
 def test_every_file_input_gets_a_protocol_whitelist_and_a_forced_demuxer(
     jail: Path, jailed_video: Path
 ) -> None:
@@ -220,7 +220,7 @@ async def test_run_ffmpeg_works_with_synthetic_sources_and_a_jailed_output(jail:
     assert res.returncode == 0 and out.stat().st_size > 0
 
 
-# ── T3: hostile and broken media ────────────────────────────────────────────────
+# ── hostile and broken media ────────────────────────────────────────────────
 HOSTILE_TEXT_INPUTS = {
     "hls.mp4": b"#EXTM3U\n#EXT-X-VERSION:3\n#EXTINF:10,\nfile:///etc/passwd\n",
     "hls_ssrf.mp4": b"#EXTM3U\n#EXTINF:10,\nhttp://169.254.169.254/latest/meta-data/\n",
@@ -303,7 +303,7 @@ async def test_size_and_duration_caps(config: AppConfig, sample_video: Path) -> 
     assert list(config.jobs_dir.iterdir()) == []
 
 
-# ── T6: paths, symlinks, filenames ──────────────────────────────────────────────
+# ── paths, symlinks, filenames ──────────────────────────────────────────────
 @pytest.mark.parametrize(
     "name",
     [
@@ -360,7 +360,7 @@ def test_reads_inside_the_job_refuse_symlinks(jail: Path, tmp_path: Path) -> Non
         require_regular_file(frame)
 
 
-# ── T1: untrusted text ──────────────────────────────────────────────────────────
+# ── untrusted text ──────────────────────────────────────────────────────────
 def test_clean_removes_invisible_and_control_characters() -> None:
     dirty = "ig​nore‮ txt\x1b[2J\x00 \U000e0049\U000e0067 end next\r\nx﻿"
     cleaned = text.clean(dirty)
@@ -437,7 +437,7 @@ async def test_hostile_transcript_is_neutralised_flagged_and_marked_untrusted(
     assert re.findall(r"^<a id=", md, re.M)  # our own anchors are intact
 
 
-# ── T1: scanner ─────────────────────────────────────────────────────────────────
+# ── scanner ─────────────────────────────────────────────────────────────────
 @pytest.mark.parametrize(
     ("sample", "kind"),
     [
@@ -469,7 +469,7 @@ def test_scanner_is_quiet_on_ordinary_speech(benign: str) -> None:
     assert dict(scan.scan_text(benign)) == {}
 
 
-# ── T7: secrets ─────────────────────────────────────────────────────────────────
+# ── secrets ─────────────────────────────────────────────────────────────────
 def test_a_configured_key_appears_in_no_output_file_log_or_stream(
     tmp_path: Path,
     sample_video: Path,
@@ -490,7 +490,7 @@ def test_a_configured_key_appears_in_no_output_file_log_or_stream(
     assert leaked == []
 
 
-# ── T9: the CLI surface ─────────────────────────────────────────────────────────
+# ── the CLI surface ─────────────────────────────────────────────────────────
 def _options(parser: argparse.ArgumentParser) -> dict[str, set[str]]:
     found: dict[str, set[str]] = {}
     for action in parser._actions:

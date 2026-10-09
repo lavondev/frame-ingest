@@ -1,4 +1,4 @@
-"""Prompt-injection heuristics over video-derived text (PLAN T1).
+"""Prompt-injection heuristics over video-derived text.
 
 Defence in depth, not a guarantee: a match becomes a warning and a count in the document's
 `injection_flags`, so a reader knows to be careful. The document is untrusted either way.

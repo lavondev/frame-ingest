@@ -1,4 +1,4 @@
-"""Run yt-dlp safely (PLAN T4): version floor in code, an empty private directory per run, a
+"""Run yt-dlp safely: version floor in code, an empty private directory per run, a
 fixed argument list, a scrubbed environment, and a verification pass over whatever it wrote
 before anything is adopted. Optional extra: `uv tool install ".[url]"`."""
 
@@ -148,7 +148,8 @@ async def download_with_ytdlp(
 ) -> YtdlpResult:
     """Download one video (and captions if there are any) from a page URL into a fresh,
     empty directory under `incoming`, verify it, and return the files."""
-    validated = await validate_url(url, resolver=resolver)  # racy on its own; see PLAN T2
+    # Racy on its own; fetch/proxy.py re-checks every connection at connect time.
+    validated = await validate_url(url, resolver=resolver)
     cmd = prefix or default_prefix()
     await check_version(cmd)
     work = incoming / f"ytdlp-{secrets.token_hex(6)}"

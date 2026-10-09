@@ -8,7 +8,7 @@ capability memo and the job workspaces.
 
 Secrets (OPENAI_API_KEY, FRAME_INGEST_<ROLE>_API_KEY) come from the process environment only and
 never appear in any serialised config, log line or file. No .env file is ever read: one in the
-working directory may belong to an unrelated project (docs/PLAN.md, T7).
+working directory may belong to an unrelated project.
 """
 
 from __future__ import annotations
@@ -84,7 +84,7 @@ class AppConfig(BaseModel):
     base_urls: BaseUrls = Field(default_factory=BaseUrls)
     local: LocalProfile = Field(default_factory=LocalProfile)
 
-    # where `export` may write (PLAN T6): only locations the user lists here, never an argument
+    # where `export` may write: only locations the user lists here, never an argument
     export_roots: list[Path] = Field(default_factory=list)
 
     # Agent mode: transcribe locally (faster-whisper) when a video has speech but no captions
@@ -100,10 +100,10 @@ class AppConfig(BaseModel):
     # harness can preview it (agent/reply.py has the rules); false keeps it in the job folder only
     preview_copy: bool = True
 
-    # OS sandbox for ffmpeg (PLAN T3): off, auto (use it when it works), require (refuse without)
+    # OS sandbox for ffmpeg: off, auto (use it when it works), require (refuse without)
     sandbox: Literal["off", "auto", "require"] = "auto"
 
-    # egress policy (PLAN T8): `ask` prompts on a terminal and denies otherwise
+    # egress policy: `ask` prompts on a terminal and denies otherwise
     egress: Literal["deny", "ask", "allow"] = "ask"
 
     # LLM call behaviour
@@ -148,7 +148,7 @@ class AppConfig(BaseModel):
     image_tokens: ImageTokenHeuristics = Field(default_factory=ImageTokenHeuristics)
     speech_tokens_per_minute: int = 220
 
-    # input caps (PLAN T3/T10)
+    # input caps
     max_file_mb: float = Field(8192, gt=0)
     max_duration_s: float = Field(6 * 3600, gt=0)
     max_pixels: int = Field(7680 * 4320, ge=1)

@@ -1,4 +1,4 @@
-"""OS-level sandbox for ffmpeg (PLAN T3, residual decoder risk).
+"""OS-level sandbox for ffmpeg, for the residual risk of decoder bugs.
 
 ffmpeg already only sees allowlisted arguments and local files (`ffmpeg_args`), but a decoder
 bug could still run attacker code. The sandbox limits what that code could do: no network, no

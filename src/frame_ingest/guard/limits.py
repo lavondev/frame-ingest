@@ -1,4 +1,4 @@
-"""Resource caps on inputs (PLAN T3/T10): size, duration, pixels and free disk."""
+"""Resource caps on inputs: size, duration, pixels and free disk."""
 
 from __future__ import annotations
 

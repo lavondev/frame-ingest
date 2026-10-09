@@ -1,4 +1,4 @@
-"""Cost cap (PLAN T10): a hard stop enforced in code, not by a prompt.
+"""Cost cap: a hard stop enforced in code, not by a prompt.
 
 Before a run the estimate must fit under the cap (and be priceable); during a run every
 provider call is charged as it completes and the job stops with `budget_exceeded` the moment the

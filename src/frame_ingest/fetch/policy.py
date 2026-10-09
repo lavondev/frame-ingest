@@ -1,4 +1,4 @@
-"""URL policy (PLAN T2): which URLs we will ever connect to.
+"""URL policy: which URLs we will ever connect to.
 
 Only http/https, no credentials in the URL, an allowlisted port, and every address the host
 resolves to must be a public one. The numeric host forms that browsers and C libraries accept
