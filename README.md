@@ -16,6 +16,10 @@
 
 <br>
 
+frame-ingest is a **Claude Code skill** that watches a video for you. Give it a file or a link (YouTube, Vimeo or a direct `.mp4`) and it writes a Markdown document: a timestamped transcript with speech-to-text errors corrected, chapters with summaries, verbatim quotes, a glossary and an index of the entities mentioned. Use it to take notes on a lecture, talk, tutorial, demo or meeting recording, or to quote and cite one.
+
+It also works in Codex, Gemini CLI, Cursor and other agents that read Agent Skills, and it ships a command-line tool. No API key is needed: speech is transcribed on your machine and your agent reads the frames.
+
 ## Install
 
 frame-ingest needs [uv](https://docs.astral.sh/uv/), a small tool that sets up Python and the CLI for you. Skip this step if you already have it (`uv --version`). Otherwise it takes about ten seconds:
@@ -93,6 +97,8 @@ Download `frame-ingest-<version>.skill` from a release (a zip; verify it against
 
 - A **corrected transcript**, with speech-to-text errors fixed using what was on screen
 - **Chapters** with summaries, plus a **glossary** and an **entity index**
+- **Verbatim quotes**, each checked against the transcript
+- A description of **what is on screen**: slides, screen recordings and on-screen text
 - **Stable anchors** (`ch-01`, `t-000125`) and timestamps, with a JSON sidecar, so every claim is citable
 
 When it finishes, the agent gives you the document path, a TL;DR, the chapters and a coverage line:
@@ -100,6 +106,65 @@ When it finishes, the agent gives you the document path, a TL;DR, the chapters a
 ```text
 audio yes · transcript asr · frames 8/8 analysed
 ```
+
+## Example output
+
+A shortened excerpt of a generated document. It comes from the project's test fixture, so the content is made up.
+
+```markdown
+---
+title: Widget Frobnicator Walkthrough
+duration: 00:01:30
+trust: untrusted-content
+coverage:
+  audio: 'yes'
+  transcript_source: asr
+  frames_analyzed: 2/2
+  chapters: 2
+  quotes_verified: 1/2
+---
+
+## Chapter 1: Setup [00:00:00 - 00:00:45] {#ch-01}
+
+### Summary — Chapter 1: Setup [00:00:00 - 00:00:45] {#ch-01-summary}
+
+How to install the product.
+
+### Notable Quotes — Chapter 1: Setup [00:00:00 - 00:00:45] {#ch-01-quotes}
+
+> "Open the dashboard first." — [00:00:06](#t-000006)
+
+### Corrected Transcript — Chapter 1: Setup [00:00:00 - 00:00:45] {#ch-01-transcript}
+
+<a id="t-000001"></a>**[00:00:01]** Welcome to the Widget Frobnicator.
+<a id="t-000006"></a>**[00:00:06]** Open the dashboard first.
+```
+
+## Questions
+
+### Can Claude watch a video?
+
+Your agent reads text and images, so frame-ingest turns the video into both. It transcribes the speech on your machine, picks frames at scene changes and slide changes, and gives the agent the transcript and the frames to read, each stamped with its time.
+
+### How do I summarize a YouTube video with Claude Code?
+
+Install the skill (above), then run `/frame-ingest <YouTube link>` in Claude Code. It downloads the video, transcribes it and gives you the document path, a TL;DR and the chapters. The full document is Markdown, and a copy is saved to `./frame-ingest-out/` in your current folder so you can preview it.
+
+### Do I need an API key?
+
+No. Speech is transcribed on your machine and your agent reads the frames, so it runs on the model you already use. The command-line tool can also call an OpenAI-compatible API (`--profile cloud`), but it shows what would be sent and asks first.
+
+### Does my video leave my machine?
+
+The speech is transcribed locally. The transcript and frames go to whichever model runs your agent, the same as any other file you give it. Nothing goes to another cloud provider without your consent, and `--offline` blocks network access for a run.
+
+### What if the video contains text that tries to instruct the AI?
+
+The document is marked `trust: untrusted-content` and starts with a warning banner. Hidden and control characters are stripped, Markdown and HTML syntax in the video's text is neutralised, and a scan flags instruction-like phrases. The skill tells your agent to treat the document as data. That lowers the risk but cannot remove it; see [SECURITY.md](SECURITY.md).
+
+### Which videos work?
+
+Local video files, links to YouTube and other sites that yt-dlp supports, and direct links to media files. ffmpeg comes bundled.
 
 ## How the data flows
 
