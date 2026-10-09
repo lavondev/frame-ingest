@@ -1,4 +1,4 @@
-"""`--offline`: hard-block network use from this process (PLAN T8).
+"""`--offline`: hard-block network use from this process.
 
 While active, any connection or DNS lookup that is not loopback raises `OfflineViolation`.
 Loopback stays open so the `local` profile can reach an Ollama or vLLM server on this machine.

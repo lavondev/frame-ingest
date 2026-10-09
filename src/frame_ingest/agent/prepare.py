@@ -1,4 +1,4 @@
-"""`prepare`: build the evidence pack the host agent reads (docs/PLAN.md section 3.1 and 3.3).
+"""`prepare`: build the evidence pack the host agent reads.
 
 <job>/agent/
     manifest.json          entry point: what to read and where to write

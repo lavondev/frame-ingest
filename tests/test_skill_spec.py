@@ -1,6 +1,6 @@
 """Guards the skill against drifting from the Agent Skills spec (https://agentskills.io/specification).
 
-This is a lightweight stand-in until `skills-ref validate` is wired into CI (docs/PLAN.md, M6).
+This is a lightweight stand-in until `skills-ref validate` is wired into CI.
 """
 
 from __future__ import annotations
@@ -64,7 +64,7 @@ def test_skill_matches_spec(skill_dir: Path) -> None:
     assert len(body.splitlines()) < 500, "keep SKILL.md under 500 lines; move detail to references/"
 
 
-# ── the frame-ingest skill specifically (docs/PLAN.md T9) ───────────────────────
+# ── the frame-ingest skill specifically ───────────────────────
 import argparse  # noqa: E402
 import json  # noqa: E402
 import os  # noqa: E402

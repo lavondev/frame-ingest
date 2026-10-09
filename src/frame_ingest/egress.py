@@ -1,4 +1,4 @@
-"""Egress plan and consent gate (PLAN T8).
+"""Egress plan and consent gate.
 
 Before anything leaves the machine the CLI computes what would go where from the estimate (a
 local computation: no provider is contacted) and shows it. Consent comes from, in order: `--offline`

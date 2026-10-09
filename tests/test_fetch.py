@@ -1,4 +1,4 @@
-"""M3: URL ingest. The fixtures from docs/PLAN.md section 4.3 that concern URLs, redirects,
+"""URL ingest: the fixtures that concern URLs, redirects,
 DNS, yt-dlp and argument injection. Nothing here touches the network: DNS is injected, HTTP is a
 mock transport, and yt-dlp is a small fake executable."""
 

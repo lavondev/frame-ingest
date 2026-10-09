@@ -1,4 +1,4 @@
-"""Property-based fuzzing of everything that parses untrusted input (docs/PLAN.md M8).
+"""Property-based fuzzing of everything that parses untrusted input.
 
 Each target must either succeed or raise its own typed error, never crash, hang or let something
 unsafe through. Hypothesis keeps a database of failures in .hypothesis/ (git-ignored)."""

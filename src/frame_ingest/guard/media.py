@@ -1,4 +1,4 @@
-"""Container allowlist by magic bytes (PLAN T3).
+"""Container allowlist by magic bytes.
 
 ffmpeg picks a demuxer by probing content, so a "video.mp4" that is really an HLS playlist, a
 concat list or an SDP file would make it open other files or URLs. We sniff the first bytes

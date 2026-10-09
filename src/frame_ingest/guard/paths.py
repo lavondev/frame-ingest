@@ -1,4 +1,4 @@
-"""The job-directory jail and symlink refusal (PLAN T6).
+"""The job-directory jail and symlink refusal.
 
 The engine sets the jail to the job directory while it works. ffmpeg inputs and outputs, and
 atomic writes, must resolve (realpath) inside it, and the final path component may never be a

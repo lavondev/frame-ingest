@@ -1,4 +1,4 @@
-"""Sanitiser for untrusted text that is written into a document (PLAN T1).
+"""Sanitiser for untrusted text that is written into a document.
 
 Anything that came from the video (transcript, on-screen text, filenames) or from a model reading
 it can carry text meant to manipulate an AI reader or to forge document structure. Two layers:

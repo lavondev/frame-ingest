@@ -1,4 +1,4 @@
-"""Egress-guard proxy (PLAN T2, phase 2): a tiny local HTTP/CONNECT proxy that yt-dlp is pointed at.
+"""Egress-guard proxy: a tiny local HTTP/CONNECT proxy that yt-dlp is pointed at.
 
 A host check before launching yt-dlp is racy (the name can resolve differently later, and
 extractors follow redirects of their own). This proxy applies the URL policy at *connect time*,

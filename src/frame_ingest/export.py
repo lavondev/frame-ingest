@@ -1,4 +1,4 @@
-"""`export`: copy a finished document out of the job directory (PLAN T6).
+"""`export`: copy a finished document out of the job directory.
 
 The destination is the one place the CLI writes outside <home>, so it is the most constrained:
 it must sit inside a root the *user* listed in config (`export_roots`, never an argument),

@@ -1,4 +1,4 @@
-"""The only way an ffmpeg argv is built (PLAN T3/T5).
+"""The only way an ffmpeg argv is built.
 
 Callers hand in the options they want; this module rebuilds the command from an allowlist:
 

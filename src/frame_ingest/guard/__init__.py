@@ -1,4 +1,4 @@
-"""Security controls (docs/PLAN.md section 4). Everything that touches the filesystem boundary, a
+"""Security controls. Everything that touches the filesystem boundary, a
 child process or untrusted text goes through this package:
 
 * `paths`: the job-directory jail, symlink refusal, no-follow reads.

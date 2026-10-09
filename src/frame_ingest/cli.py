@@ -1,10 +1,10 @@
 """Command-line entry point.
 
-M1 commands: `doctor`, `probe`, `estimate`, `run`, all on local files and all offline unless
-`doctor --online` is given. The rest of the planned surface (docs/PLAN.md, section 3.2) arrives
-with its milestone. No command runs an external process other than through the engine's ffmpeg
-wrapper. URLs are accepted by fetch/probe/estimate/prepare/run and downloaded first through
-`fetch/` (a pinned-IP fetcher or a hardened yt-dlp); ffmpeg only ever reads local files.
+The commands are listed by `--help`. Nothing talks to the network except `doctor --online`, URL
+downloads through `fetch/`, and a cloud `run` behind the egress gate. No command starts an
+external process except through `guard/subproc.py`. URLs are accepted by
+fetch/probe/estimate/prepare/run and downloaded first through `fetch/` (a pinned-IP fetcher or a
+hardened yt-dlp); ffmpeg only ever reads local files.
 
 Conventions (the agent-facing contract):
 
@@ -345,7 +345,7 @@ async def _cmd_run(args: argparse.Namespace, config: AppConfig) -> Result:
     engine = _engine(resolved.config, resolved.factory)
     job = await _job_for(args, engine, _settings(args), args.profile)
 
-    # What would leave the machine, shown before anything is spent or sent (PLAN T8, T10).
+    # What would leave the machine, shown before anything is spent or sent.
     est = await engine.estimate(job.id)
     if resolved.free:
         est = est.model_copy(update={"cost_usd": 0.0, "cost_note": "No per-call cost."})

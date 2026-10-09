@@ -1,4 +1,4 @@
-"""The only place a child process is started (PLAN T5, AGENTS.md rule 3).
+"""The only place a child process is started (AGENTS.md rule 3).
 
 argv list, never a shell; scrubbed environment (no API keys or other secrets reach a child);
 own session so a timeout kills the whole process group; wall-clock timeout; output caps; and on

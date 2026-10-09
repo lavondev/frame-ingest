@@ -26,6 +26,8 @@ The hardened agent mode.
 - Job ids come from the video's content, so every command sees the same job for the same input.
 - SKILL.md rewritten around the four commands (120 lines); details moved to `references/`.
 - Tests no longer download a real speech model.
+- The frontmatter key that marks the document format is now `frame_ingest_format`. Documents made
+  by 0.1.0 carry the previous key; `validate` accepts both.
 
 ### Fixed
 - Frame selection now keeps one frame per slide when slides or screen recordings change only
