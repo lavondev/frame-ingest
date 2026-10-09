@@ -1,9 +1,4 @@
-"""End-to-end through the Engine with fake providers on a real generated video.
-
-Ported from faircopy's HTTP-level tests (tests/test_e2e.py). The server-only cases (SSE replay,
-multipart upload limits, the job-concurrency semaphore, Range requests) were dropped with the
-web stack; everything about the pipeline itself is kept.
-"""
+"""End-to-end through the Engine with fake providers on a real generated video."""
 
 from __future__ import annotations
 

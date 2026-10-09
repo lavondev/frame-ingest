@@ -202,7 +202,7 @@ def render_markdown(a: Analysis) -> str:
         "synthesize": a.settings.synthesize_model,
     }
     front: dict[str, object] = {
-        "faircopy_format": 1,
+        "frame_ingest_format": 1,
         "title": clean(title),
         "source_file": clean(a.video.filename),
         "input_sha256": a.video.sha256,

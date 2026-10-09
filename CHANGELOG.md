@@ -5,7 +5,7 @@ semantic versioning (pre-1.0: minor versions may change the CLI).
 
 ## [Unreleased]
 
-The hardened agent mode (`docs/HARDENED-ARCHITECTURE.md`).
+The hardened agent mode.
 
 ### Added
 - `ingest`, `next`, `check`, `finish`: one call for everything mechanical, a task card with the
@@ -48,8 +48,7 @@ First tagged version. Everything below is new.
 ### Added
 - MIT license.
 - One-step install (`scripts/install.sh`) and automatic local transcription in agent mode.
-- Pipeline ported from faircopy (probe, audio, transcribe, frames, vision, correct, synthesize,
-  assemble) with a content-chained stage cache and resumable jobs.
+- Pipeline (probe, audio, transcribe, frames, vision, correct, synthesize, assemble) with a content-chained stage cache and resumable jobs.
 - CLI: `doctor`, `probe`, `estimate`, `run`, `fetch`, `prepare`, `assemble`, `validate`, `scan`,
   all with `--json` and documented exit codes.
 - Security core: one process wrapper, ffmpeg argument allowlist, container sniffing, path jail,
@@ -64,4 +63,4 @@ First tagged version. Everything below is new.
   metadata, deterministic `.skill` zip, pinned launcher, release workflow (OIDC, attestations).
 
 ### Known gaps
-- No real provider or harness has been exercised end to end; see docs/PLAN.md.
+- No real provider or harness has been exercised end to end.

@@ -1,7 +1,7 @@
 # Contributing
 
 Read `AGENTS.md` first: it holds the security rules every change must respect and a map of the
-code. `docs/PLAN.md` has the design and the roadmap.
+code. `docs/ARCHITECTURE.md` has the design rationale.
 
 ```bash
 uv sync

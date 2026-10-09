@@ -1,9 +1,9 @@
 """Run the pipeline on a local video file. This is the library entry point the CLI wraps.
 
-It replaces faircopy's FastAPI JobManager: no server, no event hub, no remote sync. A job is a
-directory under <home>/jobs/<job_id>/ holding a copy of the input, job.json (status, per-stage
-state, warnings, usage) and the stage caches. Running a job again resumes from the first stage
-whose cache is missing, so nothing already paid for is repeated.
+There is no server, event hub or remote sync. A job is a directory under <home>/jobs/<job_id>/
+holding a copy of the input, job.json (status, per-stage state, warnings, usage) and the stage
+caches. Running a job again resumes from the first stage whose cache is missing, so nothing
+already paid for is repeated.
 """
 
 from __future__ import annotations

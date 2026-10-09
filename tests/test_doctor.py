@@ -1,4 +1,4 @@
-"""`doctor` (faircopy's health check) with the OpenAI client faked: no network."""
+"""`doctor` (the health check) with the OpenAI client faked: no network."""
 
 from __future__ import annotations
 

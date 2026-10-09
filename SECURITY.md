@@ -40,9 +40,10 @@ Only the latest released minor version receives security fixes while the project
 ## Status
 
 The project is pre-alpha and there are no supported releases yet. The threat model and the
-planned controls (prompt injection through video content, SSRF and hostile URLs, hostile media and
+controls (prompt injection through video content, SSRF and hostile URLs, hostile media and
 ffmpeg, yt-dlp advisories, argument injection, path handling, secrets, egress, supply chain) are
-documented in [`docs/PLAN.md`](docs/PLAN.md), section 4.
+mapped to the code and tests that enforce them in
+[`docs/THREAT-MODEL-REVIEW.md`](docs/THREAT-MODEL-REVIEW.md).
 
 Implemented so far (local files only; there is no URL ingest yet):
 
