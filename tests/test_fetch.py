@@ -565,7 +565,9 @@ def test_a_url_goes_through_the_whole_pipeline_and_is_recorded_in_the_document(
     md = Path(out["outputs"]["md"]).read_text(encoding="utf-8")
     front = md.split("---\n")[1]
     assert "source_url: https://videos.example.org/clip.mp4" in front
-    assert "retrieved_at:" in front and "input_sha256:" in front and "faircopy_format: 1" in front
+    assert (
+        "retrieved_at:" in front and "input_sha256:" in front and "frame_ingest_format: 1" in front
+    )
     assert cli(capsys, "validate", out["outputs"]["md"])[0] == 0
 
 

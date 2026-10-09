@@ -1,6 +1,6 @@
 # Threat model: brief for an external reviewer
 
-PLAN section 8 lists "external review of the threat model" under M8. That review has to come
+An external review of the threat model has to come
 from someone outside this project; this page is what to hand them. Nothing here claims a review
 has happened.
 
@@ -53,7 +53,7 @@ tests/test_fuzz.py tests/test_providers.py`.
   still be persuaded. Structure is built in code and model output is schema-checked, so injection
   can degrade content but not forge structure.
 - **`--allow-egress` can be passed by an injected agent.** The skill pre-approves its launcher with
-  any arguments (the plan's T9) and forbids passing it unasked; that is an instruction, not a
+  any arguments and forbids passing it unasked; that is an instruction, not a
   control. `--offline` and `egress: deny` are the hard stops.
 - **Decoder bugs in ffmpeg.** Mitigated by the sandbox where one is available. `sandbox: auto`
   runs unsandboxed when none works; `sandbox: require` refuses. The Linux (`bwrap`) path is

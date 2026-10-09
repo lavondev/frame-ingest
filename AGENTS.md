@@ -8,14 +8,14 @@ Guidance for coding agents (Claude Code, Codex, and others) working in this repo
 It ships as (1) a Python CLI and (2) an Agent Skill (`skills/frame-ingest/`) that tells a host agent
 how to drive the CLI. The user-facing goal: install the skill, type `/frame-ingest <file|url>`.
 
-**Read `docs/PLAN.md` before changing anything.** It holds the architecture, the security model,
-the milestone plan (M0 to M8) and the open decisions. Work milestone by milestone; do not skip
-ahead (the M2 guard layer now exists; **no URL code before M3, and no network call site outside the provider client and `doctor`**).
+**Read `docs/ARCHITECTURE.md` and `docs/THREAT-MODEL-REVIEW.md` before changing anything.** The
+first holds the design rationale for the pipeline; the second maps every security control to its
+code and tests. **No network call site outside the provider client, `fetch/` and `doctor`**
+(`tests/test_security.py` enforces it).
 
 ## Code map
 
-The pipeline was ported from `lavondev/faircopy` (`backend/app/`) in milestone M0; the web app,
-Supabase sync and `.env` loading were dropped. Design rationale: `docs/ARCHITECTURE.md`.
+Design rationale: `docs/ARCHITECTURE.md`.
 
 - `src/frame_ingest/engine.py`: runs a job on a local file (create, estimate, run/resume, cancel).
 - `src/frame_ingest/cli.py`: the CLI (`doctor`, `probe`, `estimate`, `run`) wrapping the engine.
@@ -43,7 +43,7 @@ Supabase sync and `.env` loading were dropped. Design rationale: `docs/ARCHITECT
   guards and runs the same `assemble` stage; `validate_doc.py` backs `validate` and `scan`.
   `tests/test_agent.py` drives the whole loop with a scripted stand-in agent. Regenerate the
   published schemas with `UPDATE_SCHEMAS=1 uv run pytest tests/test_agent.py`.
-- Hardened agent mode (`docs/HARDENED-ARCHITECTURE.md`): `agent/audio.py` is the audio guarantee
+- Hardened agent mode: `agent/audio.py` is the audio guarantee
   (captions, local ASR, a VAD-free retry when `pipeline/loudness.py` says the track is not
   silent, else `needs_decision`, exit 6; state in `agent/audio.json`); `agent/templates.py`
   writes the prefilled `TODO:` templates; `agent/checks.py` holds the per-file validators that
@@ -109,7 +109,7 @@ All four must pass before a commit.
 8. **Deterministic structure.** Frontmatter, headings, anchors, timestamps and the entity index
    come from code. Model output is schema-validated and guard-checked before use.
 9. **Tests are offline.** Provider calls sit behind interfaces with fakes. Security fixtures
-   (PLAN section 4.3) must exist before the feature they protect ships.
+   must exist before the feature they protect ships.
 10. **Keep `SKILL.md` thin** (under 500 lines, spec-compliant frontmatter). Logic belongs in the
     CLI, not in prose.
 
@@ -125,4 +125,3 @@ All four must pass before a commit.
 
 The license is MIT (decided by the owner; see `LICENSE`). The egress default is `ask`
 interactively and `deny` otherwise (`egress:` in config); do not change it without the owner.
-See PLAN section 10 for the remaining open items.

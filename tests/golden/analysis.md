@@ -1,5 +1,5 @@
 ---
-faircopy_format: 1
+frame_ingest_format: 1
 title: Widget Frobnicator Walkthrough
 source_file: demo video.mp4
 input_sha256: abababababababababababababababababababababababababababababababab

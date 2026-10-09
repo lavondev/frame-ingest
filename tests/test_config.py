@@ -50,8 +50,8 @@ def test_base_url_specific_beats_general(tmp_path: Path) -> None:
     assert c.base_urls.text == "http://general/v1" and c.base_urls.transcribe == "http://general/v1"
 
 
-def test_old_faircopy_env_prefix_is_ignored(tmp_path: Path) -> None:
-    c = cfg(tmp_path, env={"FAIRCOPY_FRAME_CAP": "41", "VIDLENS_FRAME_CAP": "42"})
+def test_env_prefixes_other_than_frame_ingest_are_ignored(tmp_path: Path) -> None:
+    c = cfg(tmp_path, env={"OTHER_FRAME_CAP": "41", "LEGACY_FRAME_CAP": "42"})
     assert c.frame_cap == 100
 
 
