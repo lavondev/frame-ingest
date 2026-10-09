@@ -29,7 +29,7 @@ if command -v frame-ingest >/dev/null 2>&1; then
 fi
 
 # 3. A pinned release from PyPI through uvx: never "latest", never a piped installer.
-PIN="0.1.0"
+PIN="0.2.0"
 if command -v uvx >/dev/null 2>&1; then
   exec uvx --quiet --from "frame-ingest[local,url]==$PIN" frame-ingest "$@"
 fi

@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "frame-ingest",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Turn a video, recording, lecture, meeting, screen recording or YouTube/URL into a structured, citable Markdown document with a corrected transcript, chapters, summaries, glossary and entity index.",
   "author": { "name": "lavondev" },
   "homepage": "https://github.com/lavondev/frame-ingest",

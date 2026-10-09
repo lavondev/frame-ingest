@@ -5,9 +5,45 @@ semantic versioning (pre-1.0: minor versions may change the CLI).
 
 ## [Unreleased]
 
-The hardened agent mode.
+## [0.2.0] - 2026-10-09
+
+### Changed
+- The frontmatter key that marks the document format is now `frame_ingest_format`. Documents made
+  by 0.1.0 carry the previous key; `validate` accepts both.
+- When uv is missing, the launcher now says what uv is and how to install it (`brew install uv`,
+  `pipx install uv`) instead of pointing at a repository checkout.
+- The README leads with the uv install step, `SECURITY.md` matches what is implemented, and
+  `docs/ARCHITECTURE.md` is back.
+
+### Fixed
+- Frame selection now keeps one frame per slide when slides or screen recordings change only
+  their text: still-screen detection (`freezedetect`, config `still_min_s`, `still_noise_db`)
+  runs in the scene-detection pass, a frame is taken near the end when the last stretch is longer
+  than the coverage interval, and the pHash dedupe checks a grayscale pixel difference on
+  screen-like frames before dropping one (`dedupe_pixel_fraction`). Frames are re-selected for
+  existing jobs.
+
+## [0.1.0] - 2026-10-08
+
+First tagged version. Everything below is new, including the hardened agent mode.
 
 ### Added
+- MIT license.
+- One-step install (`scripts/install.sh`) and automatic local transcription in agent mode.
+- Pipeline (probe, audio, transcribe, frames, vision, correct, synthesize, assemble) with a
+  content-chained stage cache and resumable jobs.
+- CLI: `doctor`, `probe`, `estimate`, `run`, `fetch`, `prepare`, `assemble`, `validate`, `scan`,
+  all with `--json` and documented exit codes.
+- Security core: one process wrapper, ffmpeg argument allowlist, container sniffing, path jail,
+  size/duration/pixel caps, untrusted-text sanitiser, injection scan, security test suite.
+- URL ingest: URL policy, pinned-IP fetcher, hardened yt-dlp (version floor 2026.7.4).
+- Agent mode and the Agent Skill: evidence pack with contact sheets, validating `assemble`.
+- Pipeline mode: `cloud` and `local` profiles, egress plan and consent, `--offline`, `--max-cost`.
+- Pacing and hook metrics, safe export (Markdown or Obsidian), capped playlists, speaker labels.
+- Hardening: OS sandbox for ffmpeg (sandbox-exec, bubblewrap), egress-guard proxy for yt-dlp,
+  hypothesis fuzzing, a disclosure process and a threat-model brief for reviewers.
+- Packaging: Claude Code plugin and marketplace manifests, portable plugin manifest, Codex skill
+  metadata, deterministic `.skill` zip, pinned launcher, release workflow (OIDC, attestations).
 - `ingest`, `next`, `check`, `finish`: one call for everything mechanical, a task card with the
   exact next command and `fi_path` (the launcher path to reuse), a millisecond check per agent
   file, and assemble + validate + scan in one call. `ingest --profile local|cloud` runs the
@@ -26,43 +62,14 @@ The hardened agent mode.
 - Job ids come from the video's content, so every command sees the same job for the same input.
 - SKILL.md rewritten around the four commands (120 lines); details moved to `references/`.
 - Tests no longer download a real speech model.
-- The frontmatter key that marks the document format is now `frame_ingest_format`. Documents made
-  by 0.1.0 carry the previous key; `validate` accepts both.
 
 ### Fixed
-- Frame selection now keeps one frame per slide when slides or screen recordings change only
-  their text: still-screen detection (`freezedetect`, config `still_min_s`, `still_noise_db`)
-  runs in the scene-detection pass, a frame is taken near the end when the last stretch is longer
-  than the coverage interval, and the pHash dedupe checks a grayscale pixel difference on
-  screen-like frames before dropping one (`dedupe_pixel_fraction`). Frames are re-selected for
-  existing jobs.
 - The skill told agents to type `${CLAUDE_SKILL_DIR}/scripts/fi`, which ran `/scripts/fi` (exit
   127) where the variable was empty.
 - An empty transcript no longer lets a run continue quietly from frames alone.
 - `estimate` and `prepare` printed different job ids for the same video.
 - `run --metrics` followed by `run` on the same job reused the metrics section from the cache.
 - The ffmpeg argument builder accepted an option name as a `-vf` value (found by fuzzing).
-
-## [0.1.0] - unreleased
-
-First tagged version. Everything below is new.
-
-### Added
-- MIT license.
-- One-step install (`scripts/install.sh`) and automatic local transcription in agent mode.
-- Pipeline (probe, audio, transcribe, frames, vision, correct, synthesize, assemble) with a content-chained stage cache and resumable jobs.
-- CLI: `doctor`, `probe`, `estimate`, `run`, `fetch`, `prepare`, `assemble`, `validate`, `scan`,
-  all with `--json` and documented exit codes.
-- Security core: one process wrapper, ffmpeg argument allowlist, container sniffing, path jail,
-  size/duration/pixel caps, untrusted-text sanitiser, injection scan, security test suite.
-- URL ingest: URL policy, pinned-IP fetcher, hardened yt-dlp (version floor 2026.7.4).
-- Agent mode and the Agent Skill: evidence pack with contact sheets, validating `assemble`.
-- Pipeline mode: `cloud` and `local` profiles, egress plan and consent, `--offline`, `--max-cost`.
-- Pacing and hook metrics, safe export (Markdown or Obsidian), capped playlists, speaker labels.
-- Hardening: OS sandbox for ffmpeg (sandbox-exec, bubblewrap), egress-guard proxy for yt-dlp,
-  hypothesis fuzzing, a disclosure process and a threat-model brief for reviewers.
-- Packaging: Claude Code plugin and marketplace manifests, portable plugin manifest, Codex skill
-  metadata, deterministic `.skill` zip, pinned launcher, release workflow (OIDC, attestations).
 
 ### Known gaps
 - No real provider or harness has been exercised end to end.
